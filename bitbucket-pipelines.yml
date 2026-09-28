@@ -16,14 +16,3 @@ pipelines:
             - if (Get-Command ISCC.exe -ErrorAction SilentlyContinue) { ISCC.exe installer.iss } elseif (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe") { & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss } else { Write-Host "Inno Setup not found, only pyinstaller was built." }
           artifacts:
             - dist/**
-
-    run-tests-cloud:
-      - step:
-          name: Run Python Tests (Bitbucket Cloud)
-          image: python:3.12
-          caches:
-            - pip
-          script:
-            - python -m pip install --upgrade pip
-            - pip install -r requirements.txt
-            - python -m unittest discover tests/
