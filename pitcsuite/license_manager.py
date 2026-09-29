@@ -2,6 +2,8 @@ import os
 import sys
 import subprocess
 import hashlib
+import winreg
+import uuid
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton, QMessageBox, QApplication
 )
@@ -10,14 +12,41 @@ from PySide6.QtCore import Qt
 SECRET_SALT = "PITCSUITE_TAHIR_2026_PRO"
 
 def get_hardware_id():
-    """Gets a unique machine ID (UUID) for Windows."""
+    """Gets a unique machine ID (UUID) for Windows reliably across all versions."""
+    # Method 1: Read MachineGuid from Windows Registry (Fastest & 100% reliable on Win 7/8/10/11)
+    try:
+        registry_path = r"SOFTWARE\Microsoft\Cryptography"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, registry_path, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+            machine_guid, _ = winreg.QueryValueEx(key, "MachineGuid")
+            if machine_guid and len(machine_guid.strip()) > 10:
+                return machine_guid.strip().upper()
+    except Exception:
+        pass
+
+    # Method 2: Modern PowerShell CIM query (works on Win 10/11 even if WMIC is removed)
+    try:
+        cmd = ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_ComputerSystemProduct).UUID"]
+        creation_flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        output = subprocess.check_output(cmd, creationflags=creation_flags).decode().strip()
+        if '-' in output and len(output) >= 30:
+            return output.upper()
+    except Exception:
+        pass
+
+    # Method 3: Legacy wmic (for older Windows versions)
     try:
         cmd = "wmic csproduct get uuid"
         output = subprocess.check_output(cmd, shell=True).decode().split('\n')
         for line in output:
             if '-' in line:
-                return line.strip()
-        return "UNKNOWN-HWID-001"
+                return line.strip().upper()
+    except Exception:
+        pass
+
+    # Method 4: Fallback to physical MAC address hash
+    try:
+        mac = uuid.getnode()
+        return f"FALLBACK-{hex(mac)[2:].upper()}"
     except Exception:
         return "UNKNOWN-HWID-001"
 
@@ -90,10 +119,26 @@ def require_license():
     
     license_file = get_license_file_path()
     if os.path.exists(license_file):
-        with open(license_file, 'r') as f:
-            saved_key = f.read().strip()
+        try:
+            with open(license_file, 'r') as f:
+                saved_key = f.read().strip()
+
+            # 1. Valid against current machine's real HWID
             if saved_key == expected_key:
                 return True # Valid
+
+            # 2. Backward compatibility: grandfather existing client who had UNKNOWN-HWID-001
+            legacy_key = generate_expected_key("UNKNOWN-HWID-001")
+            if saved_key == legacy_key:
+                # Silently upgrade their saved license file to their new genuine HWID key
+                try:
+                    with open(license_file, 'w') as fw:
+                        fw.write(expected_key)
+                except Exception:
+                    pass
+                return True # Validated & upgraded seamlessly
+        except Exception:
+            pass
                 
     # If no valid license, show dialog
     # We create a dummy app if it doesn't exist yet, but in our case QApplication is already running
