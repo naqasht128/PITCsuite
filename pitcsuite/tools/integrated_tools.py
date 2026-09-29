@@ -348,12 +348,12 @@ class CP136PostingCheckerPanel(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
-        layout.addWidget(lbl("CP-136 Change Posting Checker", bold=True, color="#7eb8f7"))
-        layout.addWidget(lbl("Extract 14-figure Ref Nos, single postings, and field modifications from WAPDA RCP-136 reports into structured Excel.", color="#556"))
+        layout.addWidget(lbl("CP136 & 137 Posting Checker", bold=True, color="#7eb8f7"))
+        layout.addWidget(lbl("Extract 14-figure Ref Nos, single postings, and field modifications from WAPDA RCP-136 & CP-137 reports into structured Excel.", color="#556"))
         layout.addWidget(hline())
 
         # Inputs Group
-        group_in = QGroupBox("Source Reports (.txt / .pdf files)")
+        group_in = QGroupBox("Source Reports (CP-136 & CP-137 .txt / .pdf files)")
         form_in = QVBoxLayout(group_in)
         self.file_list = QListWidget()
         self.file_list.setMaximumHeight(70)
@@ -459,7 +459,7 @@ class CP136PostingCheckerPanel(QWidget):
         actions.addStretch()
         layout.addLayout(actions)
 
-        self.status = QLabel("Status: Ready. Add CP-136 file(s) or folder to begin.")
+        self.status = QLabel("Status: Ready. Add CP-136 / CP-137 file(s) or folder to begin.")
         self.status.setStyleSheet("color:#4a90d9;")
         layout.addWidget(self.status)
 
@@ -471,7 +471,7 @@ class CP136PostingCheckerPanel(QWidget):
         self.dedup_mode.setEnabled(checked)
 
     def _add_files(self):
-        paths, _ = QFileDialog.getOpenFileNames(self, "Select CP-136 Reports", "", "Supported Reports (*.txt *.pdf);;Text Files (*.txt);;PDF Files (*.pdf);;All files (*.*)")
+        paths, _ = QFileDialog.getOpenFileNames(self, "Select CP-136 / CP-137 Reports", "", "Supported Reports (*.txt *.pdf);;Text Files (*.txt);;PDF Files (*.pdf);;All files (*.*)")
         for p in paths:
             norm_p = os.path.normpath(p)
             if norm_p not in self.file_paths:
@@ -480,7 +480,7 @@ class CP136PostingCheckerPanel(QWidget):
         self._update_default_output()
 
     def _add_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Folder Containing CP-136 Files")
+        folder = QFileDialog.getExistingDirectory(self, "Select Folder Containing CP-136 / CP-137 Files")
         if folder:
             import glob
             files = sorted(glob.glob(os.path.join(folder, "*.txt")) + glob.glob(os.path.join(folder, "*.pdf")))
@@ -527,17 +527,17 @@ class CP136PostingCheckerPanel(QWidget):
         folder = QFileDialog.getExistingDirectory(self, "Select Output Folder")
         if folder:
             curr = self.out_ed.text().strip()
-            name = os.path.basename(curr) if curr and curr.lower().endswith('.xlsx') else "CP136_Posting_Results.xlsx"
+            name = os.path.basename(curr) if curr and curr.lower().endswith('.xlsx') else "CP136_137_Posting_Results.xlsx"
             self.out_ed.setText(os.path.normpath(os.path.join(folder, name)))
 
     def _start(self):
         if not self.file_paths:
-            QMessageBox.warning(self, "No Files", "Please add at least one CP-136 report file (.txt or .pdf).")
+            QMessageBox.warning(self, "No Files", "Please add at least one CP-136 or CP-137 report file (.txt or .pdf).")
             return
 
         out_path = self.out_ed.text().strip()
         self.log_box.clear()
-        self.status.setText("Status: Processing CP-136 reports...")
+        self.status.setText("Status: Processing CP-136 / CP-137 reports...")
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
 
@@ -585,11 +585,11 @@ class CP136PostingCheckerPanel(QWidget):
             f"• Not Posted: {unposted}\n\n"
             f"Excel file created at:\n{saved_path}"
         )
-        notify(self, "CP-136 Extraction Complete", msg_body, file_path=saved_path, folder_path=os.path.dirname(saved_path))
+        notify(self, "CP136 & 137 Extraction Complete", msg_body, file_path=saved_path, folder_path=os.path.dirname(saved_path))
 
     def _failed(self, error_msg):
         self.status.setText("Status: Failed")
-        notify(self, "CP-136 Error", error_msg, critical=True)
+        notify(self, "CP136 & 137 Error", error_msg, critical=True)
 
     def _open_excel(self):
         if self.last_output and os.path.exists(self.last_output):

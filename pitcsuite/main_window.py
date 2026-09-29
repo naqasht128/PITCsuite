@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QStackedWidget, QFrame, QLineEdit, QSpinBox, QSizePolicy, QScrollArea,
     QAbstractScrollArea, QBoxLayout, QDialog, QApplication
 )
-from PySide6.QtCore import Qt, QSize, QTimer
+from PySide6.QtCore import Qt, QSize, QTimer, QSettings
 from PySide6.QtGui import QPixmap
 
 from pitcsuite.icons import app_icon, pdf_merger_icon, get_icon
@@ -20,7 +20,10 @@ from pitcsuite.tools.file_checker import SrNoCheckerPanel
 from pitcsuite.tools.file_renamer import FileRenamerPanel
 from pitcsuite.tools.double_cr import DoubleCRPanel
 from pitcsuite.tools.settings import SettingsPanel
-from pitcsuite.auto_updater import check_for_updates, get_current_version
+from pitcsuite.auto_updater import (
+    check_for_updates, get_current_version, get_release_notes,
+    UpToDateDialog, UpdateAvailableDialog, start_download, show_post_update_dialog
+)
 from pitcsuite.tools.integrated_tools import (
     CP22TCheckerPanel, BillScraperPanel, FileMoverPanel,
     CP52PostingCheckerPanel, CP136PostingCheckerPanel, CP21cConverterPanel
@@ -34,7 +37,7 @@ TOOLS = [
     ("Bill Scrapper",                  BillScraperPanel, "bill_scrap"),
     ("Payment Extractor from 88L",    PaymentExtract88LPanel, "payment_ext"),
     ("CP 52 Posting Checker",         CP52PostingCheckerPanel, "cp52"),
-    ("CP 136 Posting Checker",        CP136PostingCheckerPanel, "cp136"),
+    ("CP136 & 137 Posting Checker",   CP136PostingCheckerPanel, "cp136"),
     ("CP 22T Posting Checker",        CP22TCheckerPanel, "cp22t"),
     ("CP21c Converter",               CP21cConverterPanel, "cp21c"),
     ("Double CR Checker",             DoubleCRPanel, "double_cr"),
@@ -49,7 +52,7 @@ class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("About PITC Suite")
-        self.setFixedSize(380, 220)
+        self.setFixedSize(400, 260)
         self.setModal(True)
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
 
@@ -81,6 +84,30 @@ class AboutDialog(QDialog):
 
         layout.addStretch()
 
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
+        btn_row.addStretch()
+
+        whats_new_btn = QPushButton("✨ What's New")
+        whats_new_btn.setCursor(Qt.PointingHandCursor)
+        whats_new_btn.setStyleSheet("""
+            QPushButton {
+                background: #1e3a5f;
+                color: #60a5fa;
+                font-size: 8.5pt;
+                font-weight: 600;
+                padding: 6px 14px;
+                border-radius: 5px;
+                border: 1px solid #2563eb;
+            }
+            QPushButton:hover {
+                background: #2563eb;
+                color: #ffffff;
+            }
+        """)
+        whats_new_btn.clicked.connect(self._show_whats_new)
+        btn_row.addWidget(whats_new_btn)
+
         close_btn = QPushButton("Close")
         close_btn.setCursor(Qt.PointingHandCursor)
         close_btn.setStyleSheet("""
@@ -88,7 +115,7 @@ class AboutDialog(QDialog):
                 background: #334155;
                 color: #e2e8f0;
                 font-size: 9pt;
-                padding: 7px 16px;
+                padding: 6px 16px;
                 border-radius: 5px;
                 border: none;
             }
@@ -97,7 +124,14 @@ class AboutDialog(QDialog):
             }
         """)
         close_btn.clicked.connect(self.accept)
-        layout.addWidget(close_btn)
+        btn_row.addWidget(close_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+    def _show_whats_new(self):
+        notes = get_release_notes(get_current_version())
+        dlg = UpToDateDialog(get_current_version(), notes, self)
+        dlg.exec()
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -152,7 +186,7 @@ class MainWindow(QMainWindow):
                 background: #475569;
             }
         """)
-        self.update_btn.clicked.connect(lambda: check_for_updates(self, silent=False))
+        self.update_btn.clicked.connect(self._on_update_clicked)
         nav_layout.addWidget(self.update_btn)
 
         self._apply_nav_state()
@@ -225,6 +259,9 @@ class MainWindow(QMainWindow):
         # Check for updates in the background after 1 second
         QTimer.singleShot(1000, lambda: check_for_updates(self, silent=True))
 
+        # Check if app was just updated to show What's New notes
+        self._check_post_update()
+
     def _show_about_dialog(self):
         dlg = AboutDialog(self)
         dlg.exec()
@@ -240,8 +277,10 @@ class MainWindow(QMainWindow):
         self.nav_collapsed = not self.nav_collapsed
         self._apply_nav_state()
 
-    def notify_update_available(self):
+    def notify_update_available(self, latest_tag=None, notes=None):
         self._has_update = True
+        self._latest_tag = latest_tag
+        self._latest_notes = notes
         self.update_btn.setStyleSheet("""
             QPushButton {
                 background: #22c55e;
@@ -258,6 +297,25 @@ class MainWindow(QMainWindow):
             }
         """)
         self._apply_nav_state()
+
+    def _on_update_clicked(self):
+        if getattr(self, "_has_update", False) and getattr(self, "_latest_tag", None):
+            notes = getattr(self, "_latest_notes", None) or []
+            dlg = UpdateAvailableDialog(get_current_version(), self._latest_tag, notes, self)
+            if dlg.exec() == QDialog.Accepted:
+                start_download(self, self._latest_tag, notes)
+        else:
+            check_for_updates(self, silent=False)
+
+    def _check_post_update(self):
+        settings = QSettings("TNDevelopers", "PITCSuite")
+        last_ver = settings.value("last_run_version", "")
+        current_ver = get_current_version()
+        if last_ver and last_ver != current_ver:
+            settings.setValue("last_run_version", current_ver)
+            QTimer.singleShot(1200, lambda: show_post_update_dialog(self, current_ver))
+        elif not last_ver:
+            settings.setValue("last_run_version", current_ver)
 
     def _apply_nav_state(self):
         self.nav.setFixedWidth(44 if self.nav_collapsed else 215)

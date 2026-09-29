@@ -30,7 +30,7 @@
 | **🧮 Bill Scrapper** | Data Extraction | Scrapes and extracts billing metadata and consumer records directly into structured formats. |
 | **💰 Payment Extractor from 88L** | Data Extraction | Parses and extracts payment scrolls and disbursement figures from 88L report sheets. |
 | **📋 CP 52 Posting Checker** | Reconciliation | Automated verification and audit reconciliation for CP-52 cash collection and posting registers. |
-| **📝 CP 136 Posting Checker** | Reconciliation | Parses WAPDA RCP-136 change posting text reports, extracts single postings, deletes 2nd duplicate findings, and formats modified fields in Excel. |
+| **📝 CP136 & 137 Posting Checker** | Reconciliation | Parses WAPDA RCP-136 & CP-137 change posting reports (.txt and .pdf), extracts single postings, deletes duplicate findings, and exports multi-sheet structured Excel workbooks. |
 | **🧾 CP 22T Posting Checker** | Reconciliation | Verifies and validates CP22T revenue posting transactions against reference records. |
 | **⚡ CP21c Converter** | Data Extraction | Extracts CP-21C electricity meter reading data from PDF and exports it to a structured single-sheet Excel file. |
 | **🔁 Double CR Checker** | Reconciliation | Audits consumer ledger records to detect duplicate consumer references (CR) and redundant postings. |
