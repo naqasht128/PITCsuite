@@ -2,7 +2,7 @@
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 AppName=PITC Suite
-AppVersion=2.8.86
+AppVersion=2.8.87
 AppPublisher=Tahir Naqash
 DefaultDirName={localappdata}\Programs\PITCSuite
 DefaultGroupName=PITC Suite
@@ -13,6 +13,9 @@ Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=lowest
 DisableWelcomePage=no
+CloseApplications=force
+CloseApplicationsFilter=pitcsuite.exe
+RestartApplications=no
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop icon"; GroupDescription: "Additional icons:"
@@ -26,13 +29,24 @@ Name: "{group}\PITC Suite"; Filename: "{app}\pitcsuite.exe"
 Name: "{autodesktop}\PITC Suite"; Filename: "{app}\pitcsuite.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\pitcsuite.exe"; Description: "Launch PITC Suite"; Flags: nowait postinstall skipifsilent shellexec
-Filename: "{app}\pitcsuite.exe"; Flags: nowait shellexec; Check: IsAutoUpdate
+Filename: "{app}\pitcsuite.exe"; Description: "Launch PITC Suite"; Flags: nowait postinstall skipifsilent shellexec; WorkingDir: "{app}"
+Filename: "{app}\pitcsuite.exe"; Flags: nowait shellexec; Check: IsAutoUpdate; WorkingDir: "{app}"
 
 [Code]
+function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  // Terminate any running or lingering instances of pitcsuite.exe so files are completely unlocked
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM pitcsuite.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(400);
+  Result := True;
+end;
+
 function IsAutoUpdate: Boolean;
 begin
   Result := ExpandConstant('{param:AUTOUPDATE|0}') = '1';
 end;
+
 
 

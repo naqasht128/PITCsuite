@@ -26,6 +26,11 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.87": [
+        "<b>Seamless Auto-Update & Process Termination:</b> Hardened application termination upon update to immediately release file locks and prevent 'file in use' errors.",
+        "<b>Automated Visible Installation:</b> Automated installer execution with active progress bar display—no manual 'Next' clicks required—and seamless relaunch upon completion.",
+        "<b>Multi-Tier Process Safety:</b> Inno Setup multi-tier process termination ensures all lingering background processes are cleared before files are updated."
+    ],
     "v2.8.86": [
         "<b>CP-136 & CP-137 Report Parser Precision:</b> Exact horizontal extraction against headings for middle blocks (Consumer Name, Address, Contact, Net Metering attributes, License#) and column-aligned below-heading extraction for top, Block 1, Block 2, and meter tables.",
         "<b>Error Codes & Meter Reading Protection:</b> Eliminated column cross-contamination, ensuring error codes (A11, TR02, etc.) and posting statuses never leak into S-Points, Meter Reading, or Email Address.",
@@ -50,7 +55,7 @@ DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
 
 def get_current_version() -> str:
     """Returns the current application version string."""
-    return "v2.8.86"
+    return "v2.8.87"
 
 
 def get_release_notes(ver: str) -> List[str]:
@@ -61,7 +66,7 @@ def get_release_notes(ver: str) -> List[str]:
     with_v = f"v{clean_ver.lstrip('vV')}"
     if with_v in DEFAULT_RELEASE_NOTES:
         return DEFAULT_RELEASE_NOTES[with_v]
-    return DEFAULT_RELEASE_NOTES.get("v2.8.86", [])
+    return DEFAULT_RELEASE_NOTES.get("v2.8.87", [])
 
 
 def parse_version_response(raw_text: str) -> Tuple[str, List[str]]:
@@ -572,14 +577,42 @@ def start_download(parent_window, latest_tag=None, notes=None):
             path_dirs = [p for p in path_dirs if p.lower().rstrip(r'\/') != meipass]
             env['PATH'] = os.pathsep.join(path_dirs)
             
-        # Launch Setup.exe visibly so the user sees the installation wizard and progress bar
+        # Launch Setup.exe with /SILENT /SP- /SUPPRESSMSGBOXES /FORCECLOSEAPPLICATIONS /AUTOUPDATE=1
+        # - /SILENT keeps the progress window and progress bar visible on screen while suppressing "Next" click wizard prompts
+        # - /SP- disables the initial "Do you wish to continue?" prompt
+        # - /SUPPRESSMSGBOXES suppresses non-critical installer prompts
+        # - /FORCECLOSEAPPLICATIONS forcefully closes running applications using files that need updating
+        # - /AUTOUPDATE=1 instructs installer to auto-relaunch pitcsuite.exe upon completion
+        installer_args = [
+            path,
+            "/SILENT",
+            "/SP-",
+            "/SUPPRESSMSGBOXES",
+            "/FORCECLOSEAPPLICATIONS",
+            "/AUTOUPDATE=1"
+        ]
+
+        creation_flags = 0
+        if sys.platform == 'win32':
+            creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
+            if hasattr(subprocess, 'DETACHED_PROCESS'):
+                creation_flags |= subprocess.DETACHED_PROCESS
+
         subprocess.Popen(
-            [path, "/AUTOUPDATE=1"],
-            env=env
+            installer_args,
+            env=env,
+            creationflags=creation_flags
         )
         
-        QApplication.instance().quit()
-        sys.exit(0)
+        # Immediately exit process forcefully to release executable and DLL file locks instantly,
+        # preventing "file in use" errors during update
+        try:
+            app_inst = QApplication.instance()
+            if app_inst:
+                app_inst.quit()
+        except Exception:
+            pass
+        os._exit(0)
 
     def on_error(err):
         progress_dialog.close()
