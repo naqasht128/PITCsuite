@@ -27,9 +27,9 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
     "v2.8.86": [
-        "<b>Visible Auto-Updater Wizard:</b> Update installation now launches visibly with an interactive installation wizard and progress bar.",
-        "<b>License Manager Multi-Tier Persistence:</b> Enhanced hardware-locked licensing with seamless backward compatibility across BIOS/WMIC UUIDs and modern Registry MachineGuids.",
-        "<b>Multi-Location Redundancy:</b> Added automatic license sync across AppData, LocalAppData, ProgramData, and Windows Registry so updates never prompt for serial key again."
+        "<b>CP-136 & CP-137 Report Parser Precision:</b> Exact horizontal extraction against headings for middle blocks (Consumer Name, Address, Contact, Net Metering attributes, License#) and column-aligned below-heading extraction for top, Block 1, Block 2, and meter tables.",
+        "<b>Error Codes & Meter Reading Protection:</b> Eliminated column cross-contamination, ensuring error codes (A11, TR02, etc.) and posting statuses never leak into S-Points, Meter Reading, or Email Address.",
+        "<b>Installer Modernization:</b> Configured Inno Setup 6 64-bit mode (<code>x64compatible</code>) for seamless, robust installation on modern Windows 10 and Windows 11."
     ],
     "v2.8.85": [
         "<b>License Manager Multi-Tier Persistence:</b> Enhanced hardware-locked licensing with seamless backward compatibility across previous BIOS/WMIC UUIDs and modern Registry MachineGuids.",
