@@ -549,10 +549,10 @@ def start_download(parent_window, latest_tag=None, notes=None):
         msg.setIcon(QMessageBox.Information)
         msg.setText(f"The update{ver_str} is ready to install.")
         msg.setInformativeText(
-            "The application will restart and install the update silently in the background.\n\n"
-            "All new amendments will be active immediately upon restart."
+            "The installer will now launch to install the update.\n\n"
+            "All new amendments will be active immediately upon completion."
         )
-        msg.addButton("Restart application", QMessageBox.AcceptRole)
+        msg.addButton("Install Update", QMessageBox.AcceptRole)
         msg.exec()
         
         # Strip PyInstaller's _PYI_* environment variables to prevent child process conflicts
@@ -567,10 +567,9 @@ def start_download(parent_window, latest_tag=None, notes=None):
             path_dirs = [p for p in path_dirs if p.lower().rstrip(r'\/') != meipass]
             env['PATH'] = os.pathsep.join(path_dirs)
             
-        # Launch Setup.exe directly (DETACHED_PROCESS)
+        # Launch Setup.exe visibly so the user sees the installation wizard and progress bar
         subprocess.Popen(
-            [path, "/SILENT", "/FORCECLOSEAPPLICATIONS", "/AUTOUPDATE=1"],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            [path, "/AUTOUPDATE=1"],
             env=env
         )
         
