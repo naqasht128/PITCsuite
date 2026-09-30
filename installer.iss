@@ -37,8 +37,8 @@ function InitializeSetup(): Boolean;
 var
   ResultCode: Integer;
 begin
-  // Terminate any running or lingering instances of pitcsuite.exe so files are completely unlocked
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM pitcsuite.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // Terminate any running or lingering instances of pitcsuite.exe (without /T so installer itself is never terminated)
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM pitcsuite.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(400);
   Result := True;
 end;

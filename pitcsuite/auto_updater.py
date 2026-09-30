@@ -592,17 +592,29 @@ def start_download(parent_window, latest_tag=None, notes=None):
             "/AUTOUPDATE=1"
         ]
 
-        creation_flags = 0
-        if sys.platform == 'win32':
-            creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
-            if hasattr(subprocess, 'DETACHED_PROCESS'):
-                creation_flags |= subprocess.DETACHED_PROCESS
+        # Launch installer via Windows Shell (os.startfile) so it runs as an independent root process
+        # completely outside pitcsuite.exe's process tree, preventing any parent-child termination issues.
+        launched = False
+        args_str = "/SILENT /SP- /SUPPRESSMSGBOXES /FORCECLOSEAPPLICATIONS /AUTOUPDATE=1"
+        if sys.platform == 'win32' and hasattr(os, 'startfile'):
+            try:
+                os.startfile(path, "open", arguments=args_str)
+                launched = True
+            except Exception:
+                launched = False
 
-        subprocess.Popen(
-            installer_args,
-            env=env,
-            creationflags=creation_flags
-        )
+        if not launched:
+            creation_flags = 0
+            if sys.platform == 'win32':
+                creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
+                if hasattr(subprocess, 'DETACHED_PROCESS'):
+                    creation_flags |= subprocess.DETACHED_PROCESS
+
+            subprocess.Popen(
+                [path] + args_str.split(),
+                env=env,
+                creationflags=creation_flags
+            )
         
         # Immediately exit process forcefully to release executable and DLL file locks instantly,
         # preventing "file in use" errors during update
