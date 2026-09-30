@@ -26,6 +26,11 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.86": [
+        "<b>Visible Auto-Updater Wizard:</b> Update installation now launches visibly with an interactive installation wizard and progress bar.",
+        "<b>License Manager Multi-Tier Persistence:</b> Enhanced hardware-locked licensing with seamless backward compatibility across BIOS/WMIC UUIDs and modern Registry MachineGuids.",
+        "<b>Multi-Location Redundancy:</b> Added automatic license sync across AppData, LocalAppData, ProgramData, and Windows Registry so updates never prompt for serial key again."
+    ],
     "v2.8.85": [
         "<b>License Manager Multi-Tier Persistence:</b> Enhanced hardware-locked licensing with seamless backward compatibility across previous BIOS/WMIC UUIDs and modern Registry MachineGuids.",
         "<b>Multi-Location Redundancy:</b> Added automatic license sync across AppData, LocalAppData, ProgramData, and Windows Registry so updates never prompt for serial key again.",
@@ -45,7 +50,7 @@ DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
 
 def get_current_version() -> str:
     """Returns the current application version string."""
-    return "v2.8.85"
+    return "v2.8.86"
 
 
 def get_release_notes(ver: str) -> List[str]:
@@ -56,7 +61,7 @@ def get_release_notes(ver: str) -> List[str]:
     with_v = f"v{clean_ver.lstrip('vV')}"
     if with_v in DEFAULT_RELEASE_NOTES:
         return DEFAULT_RELEASE_NOTES[with_v]
-    return DEFAULT_RELEASE_NOTES.get("v2.8.85", [])
+    return DEFAULT_RELEASE_NOTES.get("v2.8.86", [])
 
 
 def parse_version_response(raw_text: str) -> Tuple[str, List[str]]:
@@ -64,7 +69,7 @@ def parse_version_response(raw_text: str) -> Tuple[str, List[str]]:
     Parses version response text from Google Drive or remote URL.
     Supports:
       1. Plain text with version on line 1, and optional notes/bullets on subsequent lines
-      2. JSON format: {"version": "v2.8.85", "notes": ["...", "..."]}
+      2. JSON format: {"version": "v2.8.86", "notes": ["...", "..."]}
     """
     raw_text = raw_text.strip()
     if not raw_text:
