@@ -26,6 +26,11 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.85": [
+        "<b>License Manager Multi-Tier Persistence:</b> Enhanced hardware-locked licensing with seamless backward compatibility across previous BIOS/WMIC UUIDs and modern Registry MachineGuids.",
+        "<b>Multi-Location Redundancy:</b> Added automatic license sync across AppData, LocalAppData, ProgramData, and Windows Registry so updates never prompt for serial key again.",
+        "<b>Installer Modernization:</b> Updated Inno Setup 6 architecture to <code>x64compatible</code> for full compatibility with both x64 and modern ARM64 Windows."
+    ],
     "v2.8.84": [
         "<b>CP136 & 137 Posting Checker:</b> Full support for CP-137 change reports alongside CP-136, automatically generating segregated sheets (<i>Summary</i>, <i>CP136 Posting Data</i>, and <i>CP137 Posting Data</i>) in combined Excel exports.",
         "<b>Sub Division Calculation:</b> Added automated <code>=MID(Ref No., 3, 5)</code> formula column next to Reference Number for instant subdivision grouping and filtering.",
@@ -40,7 +45,7 @@ DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
 
 def get_current_version() -> str:
     """Returns the current application version string."""
-    return "v2.8.84"
+    return "v2.8.85"
 
 
 def get_release_notes(ver: str) -> List[str]:
@@ -51,7 +56,7 @@ def get_release_notes(ver: str) -> List[str]:
     with_v = f"v{clean_ver.lstrip('vV')}"
     if with_v in DEFAULT_RELEASE_NOTES:
         return DEFAULT_RELEASE_NOTES[with_v]
-    return DEFAULT_RELEASE_NOTES.get("v2.8.84", [])
+    return DEFAULT_RELEASE_NOTES.get("v2.8.85", [])
 
 
 def parse_version_response(raw_text: str) -> Tuple[str, List[str]]:
@@ -59,7 +64,7 @@ def parse_version_response(raw_text: str) -> Tuple[str, List[str]]:
     Parses version response text from Google Drive or remote URL.
     Supports:
       1. Plain text with version on line 1, and optional notes/bullets on subsequent lines
-      2. JSON format: {"version": "v2.8.84", "notes": ["...", "..."]}
+      2. JSON format: {"version": "v2.8.85", "notes": ["...", "..."]}
     """
     raw_text = raw_text.strip()
     if not raw_text:
