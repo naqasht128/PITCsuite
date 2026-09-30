@@ -89,7 +89,7 @@ SPANS_BLOCK_2: List[Tuple[str, int, int]] = [
     ('TRANSFRMR CODE', 44, 60),
 ]
 
-SPANS_BLOCK_3: List[Tuple[str, int, int]] = [
+SPANS_BLOCK_3_CP136: List[Tuple[str, int, int]] = [
     ('SET NO', 0, 9),
     ('METER TYPE', 9, 21),
     ('FEEDER CODE', 21, 31),
@@ -102,6 +102,25 @@ SPANS_BLOCK_3: List[Tuple[str, int, int]] = [
     ('METER READING', 83, 97),
     ('ERRORS CODES', 97, 135),
 ]
+
+SPANS_BLOCK_3_CP137: List[Tuple[str, int, int]] = [
+    ('SET NO', 0, 9),
+    ('METER TYPE', 9, 18),
+    ('MAIN/S. SET', 18, 28),
+    ('KVARH/KVAH-CD', 28, 38),
+    ('FEEDER CODE', 38, 48),
+    ('METER NO', 48, 58),
+    ('LOC CODE', 58, 67),
+    ('MFG CODE', 67, 76),
+    ('METER CODE', 76, 85),
+    ('M/PLY FACTOR', 85, 94),
+    ('MTR RANGE', 94, 102),
+    ('METER READING', 102, 115),
+    ('ERRORS CODES', 115, 140),
+]
+
+SPANS_BLOCK_3 = SPANS_BLOCK_3_CP136
+
 
 
 def clean_page_banners(raw_text: str) -> List[str]:
@@ -130,6 +149,7 @@ def clean_page_banners(raw_text: str) -> List[str]:
                 'WAPDA ELECTRICITY BILLING',
                 'MASTER DATA CHANGE',
                 'POSTING LIST FOR MAIN DATE',
+                'PROOF LIST FOR MAIN DATE',
                 'DIVISON TOTAL:',
                 'GRAND TOTAL:',
                 'Total Records For the MainDate',
@@ -154,7 +174,10 @@ def parse_single_txt_file(filepath: str) -> List[Dict[str, Any]]:
         raw_text = f.read()
 
     base_filename = os.path.basename(filepath)
-    report_type = 'CP-137' if ('CP-137' in raw_text or 'RCP-137' in raw_text or '137' in base_filename) else 'CP-136'
+    if re.search(r'\b(?:RCP-137|CP-137|CP137)\b', raw_text[:2000], re.I) or '137' in base_filename:
+        report_type = 'CP-137'
+    else:
+        report_type = 'CP-136'
 
     unified_lines = clean_page_banners(raw_text)
     ref_pattern = re.compile(r'^\s*(\d{14})')
@@ -175,8 +198,10 @@ def parse_single_txt_file(filepath: str) -> List[Dict[str, Any]]:
     ]
     ignored_b3 = [
         'SET NO', 'CODE      NO', '----------------', 'New Ref No',
-        'POSTED', 'NOT POSTED'
+        'POSTED', 'NOT POSTED', 'CANNOT BE POSTED', 'READY FOR POSTING'
     ]
+
+    spans_b3 = SPANS_BLOCK_3_CP136 if report_type == 'CP-136' else SPANS_BLOCK_3_CP137
 
     for idx, r_i in enumerate(ref_indices):
         next_i = ref_indices[idx + 1] if idx + 1 < len(ref_indices) else len(unified_lines)
@@ -196,19 +221,20 @@ def parse_single_txt_file(filepath: str) -> List[Dict[str, Any]]:
         # Status
         status = ''
         for line in rec_lines:
-            if 'NOT POSTED' in line:
+            line_u = line.upper()
+            if 'CANNOT BE POSTED' in line_u or 'NOT POSTED' in line_u:
                 status = 'NOT POSTED'
                 break
-            elif 'POSTED' in line and 'Total Records' not in line:
+            elif 'READY FOR POSTING' in line_u or ('POSTED' in line_u and 'TOTAL RECORDS' not in line_u):
                 status = 'POSTED'
 
         # Error codes
         error_codes: List[str] = []
         for line in rec_lines:
-            if 'Ref No' in line or 'SET NO' in line or 'ERROR CODES' in line or 'ERRORS CODES' in line:
+            if any(k in line for k in ['Ref No', 'REF NO', 'SET NO', 'ERROR CODES', 'ERRORS CODES', 'PRINTING DATE', 'WAPDA']):
                 continue
-            if len(line) > 95:
-                found = err_pattern.findall(line[95:])
+            if len(line) > 60:
+                found = err_pattern.findall(line)
                 for code in found:
                     code_clean = code.strip(',')
                     if code_clean not in error_codes and code_clean not in ['POSTED', 'TOTAL']:
@@ -314,7 +340,7 @@ def parse_single_txt_file(filepath: str) -> List[Dict[str, Any]]:
                 found_set = True
                 continue
             if found_set:
-                if 'New Ref No' in line or 'NEW-REFERENCE-NUMBER' in line or 'POSTED' in line or 'Ref No' in line:
+                if any(k in line for k in ['New Ref No', 'NEW-REFERENCE-NUMBER', 'POSTED', 'NOT POSTED', 'CANNOT BE POSTED', 'READY FOR POSTING', 'Ref No']):
                     break
                 s = line.strip()
                 if not s or any(ign in s for ign in ignored_b3):
@@ -324,7 +350,7 @@ def parse_single_txt_file(filepath: str) -> List[Dict[str, Any]]:
         if set_lines:
             for sline in set_lines:
                 row_copy = dict(record_data)
-                for col_name, start, end in SPANS_BLOCK_3:
+                for col_name, start, end in spans_b3:
                     if col_name == 'ERRORS CODES':
                         continue
                     val = sline[start:end].strip() if start < len(sline) else ''
@@ -337,11 +363,40 @@ def parse_single_txt_file(filepath: str) -> List[Dict[str, Any]]:
     return records
 
 
+LABEL_DEFINITIONS: List[Tuple[str, List[str]]] = [
+    ('CONSUMER NAME', ['CONSUMER', 'NAME']),
+    ('FATHER/HUSBAND NAME', ['FATHER/HUSBAND', 'NAME']),
+    ('ADDRES LINE -1', ['ADDRES', 'LINE', '-1']),
+    ('ADDRES LINE -2', ['ADDRES', 'LINE', '-2']),
+    ('ADDRESS LINE -1', ['ADDRESS', 'LINE', '-1']),
+    ('ADDRESS LINE -2', ['ADDRESS', 'LINE', '-2']),
+    ('CONTACT #', ['CONTACT', '#']),
+    ('CONTACT NO', ['CONTACT', 'NO']),
+    ('EMAIL ADDRESS', ['EMAIL', 'ADDRESS']),
+    ('SIM ID', ['SIM', 'ID']),
+    ('SIM NO', ['SIM', 'NO']),
+    ('NET MTR CD', ['NET', 'MTR', 'CD']),
+    ('NET MTR CAP', ['NET', 'MTR', 'CAP']),
+    ('NET MTR CONNECTION DATE', ['NET', 'MTR', 'CONNECTION', 'DATE']),
+    ('NET MTR EXPIRY DATE', ['NET', 'MTR', 'EXPIRY', 'DATE']),
+    ('EXPIRY DATE', ['EXPIRY', 'DATE']),
+    ('CONNECTION CATEGORY CODE', ['CONNECTION', 'CATEGORY', 'CODE']),
+    ('TRANSFORMER REF NO', ['TRANSFORMER', 'REF', 'NO']),
+    ('TRANSFORMER ADDRESS', ['TRANSFORMER', 'ADDRESS']),
+    ('LICENSE#', ['LICENSE#']),
+]
+
+HEADER_WORDS_METER = {
+    'SET', 'NO', 'NO.', 'METER', 'TYPE', 'MAIN/', 'MAIN', 'S.', 'SET', 'KVARH/', 'KVAH-CD',
+    'FEEDER', 'CODE', 'LOC', 'MFG', 'FACTOR', 'RANGE', 'RNG', 'READING', 'ERRORS', 'CODES', 'M/PLY', 'MTR'
+}
+
+
 def parse_single_pdf_file(filepath: str) -> List[Dict[str, Any]]:
     """
     Parses a single CP-136 or CP-137 change posting PDF report and extracts structured records.
-    Accurately extracts 14-figure Ref Nos, Status, Net Metering changes, Meter Sets,
-    New Reference Numbers, and all modified fields.
+    Accurately extracts 14-digit Ref Nos, Customer IDs, Status, Net Metering changes, Meter Sets,
+    New Reference Numbers, Error Codes, and all modified fields without column contamination.
     """
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"File not found: {filepath}")
@@ -353,14 +408,6 @@ def parse_single_pdf_file(filepath: str) -> List[Dict[str, Any]]:
         raise ImportError("pdfplumber is required for parsing CP-136 and CP-137 PDF reports.")
 
     with pdfplumber.open(filepath) as pdf:
-        first_text = pdf.pages[0].extract_text() or ''
-        if 'CP-137' in first_text or 'RCP-137' in first_text or '137' in base_filename:
-            report_type = 'CP-137'
-        elif 'CP-136' in first_text or 'RCP-136' in first_text or '136' in base_filename:
-            report_type = 'CP-136'
-        else:
-            report_type = 'CP-136'
-
         for pno, page in enumerate(pdf.pages):
             text = page.extract_text() or ''
             if not text or any(m in text for m in ['DIVISON TOTAL', 'GRAND TOTAL', 'Total Records For the MainDate', 'Total Records Posted']):
@@ -370,47 +417,77 @@ def parse_single_pdf_file(filepath: str) -> List[Dict[str, Any]]:
             if not words:
                 continue
 
-            # Status
+            # Determine Report Type from page text (avoiding false positive on page numbers like PAGE: 137)
+            banner_area = text[:500]
+            if re.search(r'\b(?:RCP-137|CP-137|CP137)\b', banner_area, re.IGNORECASE):
+                report_type = 'CP-137'
+            elif re.search(r'\b(?:RCP-136|CP-136|CP136)\b', banner_area, re.IGNORECASE):
+                report_type = 'CP-136'
+            elif '137' in base_filename:
+                report_type = 'CP-137'
+            else:
+                report_type = 'CP-136'
+
+            # Determine Status from status text
             status = ''
-            if 'NOT POSTED' in text:
+            if re.search(r'CANNOT\s+BE\s+POSTED', text, re.IGNORECASE) or re.search(r'\bNOT\s+POSTED\b', text, re.IGNORECASE):
                 status = 'NOT POSTED'
-            elif 'POSTED' in text:
+            elif re.search(r'READY\s+FOR\s+POSTING', text, re.IGNORECASE) or re.search(r'\bPOSTED\b', text, re.IGNORECASE):
                 status = 'POSTED'
 
+            # Group words by Y line (rounded to 3pt)
+            lines: Dict[float, List[Dict[str, Any]]] = {}
+            for w in words:
+                top_k = round(w['top'] / 3.0) * 3.0
+                lines.setdefault(top_k, []).append(w)
+
             # Landmarks
-            y_ref_hdr = None
+            y_top_hdr = None
             y_b1_hdr = None
             y_b2_hdr = None
-            y_b3_hdr = None
+            y_mid_hdr = None
+            y_meter_hdr = None
             y_newref_hdr = None
 
-            for w in words:
-                txt = w['text'].upper()
-                top = w['top']
-                x0 = w['x0']
-                if ('REF.' in txt or 'REF' in txt) and x0 < 60 and top < 130 and y_ref_hdr is None:
-                    y_ref_hdr = top
-                elif ('DATE' in txt or 'CONN' in txt) and x0 < 100 and 130 < top < 190 and y_b1_hdr is None:
-                    y_b1_hdr = top
-                elif ('METER' in txt or 'RENT' in txt) and x0 < 120 and 190 < top < 240 and y_b2_hdr is None:
-                    y_b2_hdr = top
-                elif ('SET' in txt) and x0 < 60 and 300 < top < 440 and y_b3_hdr is None:
-                    y_b3_hdr = top
-                elif ('NEW-REFERENCE' in txt or 'NEW' in txt) and top > 340 and y_newref_hdr is None:
-                    y_newref_hdr = top
+            for top_k in sorted(lines.keys()):
+                line_words = sorted(lines[top_k], key=lambda x: x['x0'])
+                line_text = ' '.join(w['text'].upper() for w in line_words)
+                
+                if ('REF NO' in line_text or 'REF. NO' in line_text) and top_k < 140 and y_top_hdr is None:
+                    y_top_hdr = top_k
+                elif any(k in line_text for k in ['CONN DATE', 'DATE OF CONNECTION']) and 120 < top_k < 180 and y_b1_hdr is None:
+                    y_b1_hdr = top_k
+                elif 'METER RENT' in line_text and 170 < top_k < 235 and y_b2_hdr is None:
+                    y_b2_hdr = top_k
+                elif 'CONSUMER NAME' in line_text and 205 < top_k < 260 and y_mid_hdr is None:
+                    y_mid_hdr = top_k
+                elif 'SET NO' in line_text and 290 < top_k < 430 and y_meter_hdr is None:
+                    y_meter_hdr = top_k
+                elif any(k in line_text for k in ['NEW REF NO', 'NEW-REFERENCE-NUMBER']) and top_k > 320 and y_newref_hdr is None:
+                    y_newref_hdr = top_k
 
-            # Ref No: look for 14-digit word under ref header
-            ref_words = [w for w in words if re.match(r'^\d{14}$', w['text']) and (y_ref_hdr if y_ref_hdr else 80) <= w['top'] < (y_b1_hdr if y_b1_hdr else 160) and w['x0'] < 120]
-            if not ref_words:
-                ref_words = [w for w in words if re.match(r'^\d{14}$', w['text']) and w['top'] < 200 and w['x0'] < 120]
+            # Find Ref No (14 digits)
+            ref_no = ''
+            y_ref = None
+            for top_k in sorted(lines.keys()):
+                if y_top_hdr and top_k < y_top_hdr:
+                    continue
+                if y_b1_hdr and top_k >= y_b1_hdr:
+                    break
+                for w in lines[top_k]:
+                    if re.match(r'^\d{14}$', w['text']) and w['x0'] < 120:
+                        ref_no = w['text']
+                        y_ref = top_k
+                        break
+                if ref_no:
+                    break
 
-            if not ref_words:
+            if not ref_no:
                 continue
 
-            ref_no = ref_words[0]['text']
-            y_ref = ref_words[0]['top']
+            all_error_codes: List[str] = []
 
-            rec = {
+            rec: Dict[str, Any] = {
                 'Ref No': ref_no,
                 'Sub Division': ref_no[2:7] if len(ref_no) >= 7 else '',
                 'Status': status,
@@ -418,184 +495,282 @@ def parse_single_pdf_file(filepath: str) -> List[Dict[str, Any]]:
                 'File Name': base_filename,
             }
 
-            # Top block values (same line as Ref No)
-            top_words = [w for w in words if abs(w['top'] - y_ref) < 8 and w['x0'] > 80]
-            for w in top_words:
-                x = w['x0']
+            # Top Block data words (line of Ref No)
+            top_data_words = []
+            if y_ref is not None:
+                for yk in lines:
+                    if abs(yk - y_ref) <= 6:
+                        for w in lines[yk]:
+                            if w['text'] != ref_no:
+                                top_data_words.append(w)
+            top_data_words = sorted(top_data_words, key=lambda x: x['x0'])
+
+            for w in top_data_words:
                 txt = w['text']
-                if 80 <= x < 180 and txt.isdigit() and len(txt) >= 8:
+                x = w['x0']
+                # Error codes at far right (under ERROR CODES column)
+                if (x >= 620 or re.match(r'^[A-Z0-9]+,', txt)) and x >= 550:
+                    for ec in txt.split(','):
+                        ec = ec.strip()
+                        if ec and ec not in all_error_codes and ec not in ['POSTED', 'NOT']:
+                            all_error_codes.append(ec)
+                elif txt.isdigit() and len(txt) >= 8 and x < 240:
                     rec['Customer ID'] = txt
-                elif 155 <= x < 210:
-                    rec['SUB BATCH'] = txt
-                elif 210 <= x < 250:
-                    rec['TARIFF'] = txt
-                elif 250 <= x < 310:
-                    rec['APPLICATION NO'] = txt
-                elif 310 <= x < 370:
-                    rec['APP DATE'] = txt
-                elif 370 <= x < 430:
-                    rec['SEC AMOUNT'] = txt
-                elif 430 <= x < 485:
-                    rec['SEC DATE'] = txt
-                elif 485 <= x < 545 and txt.isdigit():
-                    rec['MAIN SETS'] = txt
-                elif 545 <= x < 605 and txt.isdigit():
-                    rec['SUB SETS'] = txt
-                elif 605 <= x < 650:
-                    rec['S-POINTS'] = txt
-                elif 650 <= x < 740 and txt not in ['POSTED', 'NOT']:
-                    rec['ERROR CODES'] = txt
+                elif report_type == 'CP-136':
+                    # CP-136 top columns: REF NO, SUB BATCH, CUSTOMER ID, TARIFF, APPLICATION NO, APPL DATE, SEC AMOUNT, SEC DATE, ERROR CODES
+                    if 100 <= x < 165:
+                        rec['SUB BATCH'] = txt
+                    elif 235 <= x < 285:
+                        rec['TARIFF'] = txt
+                    elif 285 <= x < 370:
+                        rec['APPLICATION NO'] = txt
+                    elif 370 <= x < 445:
+                        rec['APP DATE'] = txt
+                    elif 445 <= x < 530:
+                        rec['SEC AMOUNT'] = txt
+                    elif 530 <= x < 620:
+                        rec['SEC DATE'] = txt
+                else:  # CP-137
+                    # CP-137 top columns: Ref. No, Customer ID, SUB BATCH, TARIFF, APP. NO, APP. DATE, SEC. AMNT, SEC. DATE, MAIN SETS, SUB SETS, S-POINTS, ERROR CODES
+                    if 145 <= x < 205:
+                        rec['SUB BATCH'] = txt
+                    elif 205 <= x < 245:
+                        rec['TARIFF'] = txt
+                    elif 245 <= x < 300:
+                        rec['APPLICATION NO'] = txt
+                    elif 300 <= x < 365:
+                        rec['APP DATE'] = txt
+                    elif 365 <= x < 440:
+                        rec['SEC AMOUNT'] = txt
+                    elif 440 <= x < 485:
+                        rec['SEC DATE'] = txt
+                    elif 485 <= x < 545 and txt.isdigit():
+                        rec['MAIN SETS'] = txt
+                    elif 545 <= x < 600 and txt.isdigit():
+                        rec['SUB SETS'] = txt
+                    elif 600 <= x < 645:
+                        rec['S-POINTS'] = txt
 
             # Block 1 values (between y_b1_hdr and y_b2_hdr)
             HEADER_WORDS_B1 = {
-                'DATE', 'OF', 'CONNECTION', 'SANC', 'LOAD', 'TRANS.', 'TRANS', 'CAPCTY',
-                'R/U', 'RU', 'F/P', 'SEASON', 'CONS.', 'CONS', 'CLASS', 'ELEC.', 'ELEC',
-                'DUTY', 'GOVT.', 'GOVT', 'DEPT.', 'DEPT', 'STD-CLSF.', 'STD-CLSF', 'STD',
-                'CLSF', 'I-TAX', 'IT', 'NO', 'METER', 'METERS', 'AC', 'NTN', 'GST', 'OLD', '(', ')'
+                'DATE', 'OF', 'CONNECTION', 'SANC', 'SAN', 'LOAD', 'TRANS.', 'TRANS', 'CAPCTY',
+                'R/U', 'RU', 'F/P', 'SEASON', 'CD', 'CONS.', 'CONS', 'CLASS', 'ELEC.', 'ELEC',
+                'DUTY', 'GOVT.', 'GOVT', 'DEPT.', 'DEPT', 'GVT', 'DEP', 'STD-CLSF.', 'STD-CLSF', 'STD',
+                'CLSF', 'I-TAX', 'IT', 'TOTAL', 'METERS', 'AC', 'NTN', 'GST', 'OLD', '(', ')'
             }
-            HEADER_WORDS_B2 = {
-                'METER', 'RENT', 'SERVICE', 'SRV', 'N.', 'N', 'ID.', 'ID', 'NUMBER',
-                'TRANSFRMR.', 'TRANSFRMR', 'CODE', 'STREET', 'LIGHT', 'CATEGORY',
-                'LINE', 'LENGTH', 'OLD', '(', ')'
-            }
-
-            if y_b1_hdr:
-                y_max_b1 = y_b2_hdr if y_b2_hdr else (y_b1_hdr + 40)
+            if y_b1_hdr is not None:
+                y_max_b1 = (y_b2_hdr - 6) if y_b2_hdr else (y_b1_hdr + 35)
                 b1_words = [
                     w for w in words
-                    if y_b1_hdr + 22 <= w['top'] < y_max_b1
+                    if y_b1_hdr + 14 <= w['top'] < y_max_b1
                     and not w['text'].startswith('---')
                     and w['text'].upper().rstrip('.') not in HEADER_WORDS_B1
                 ]
                 for w in b1_words:
                     x = w['x0']
                     txt = w['text']
-                    if 20 <= x < 115: rec['CONN DATE'] = txt
-                    elif 115 <= x < 160: rec['SAN LOAD'] = txt
-                    elif 160 <= x < 200: rec['TRANS. CAPCTY'] = txt
-                    elif 200 <= x < 225: rec['RU'] = txt
-                    elif 225 <= x < 250: rec['F/P'] = txt
-                    elif 250 <= x < 300: rec['SEASON CD'] = txt
-                    elif 300 <= x < 345: rec['CONS. CLASS'] = txt
-                    elif 345 <= x < 380: rec['ED CD'] = txt
-                    elif 380 <= x < 425: rec['GVT DEP'] = txt
-                    elif 425 <= x < 485: rec['STD CLSF'] = txt
-                    elif 485 <= x < 525: rec['IT'] = txt
-                    elif 525 <= x < 600: rec['METERS'] = txt
-                    elif 600 <= x < 630: rec['AC'] = txt
-                    elif 630 <= x < 680: rec['NTN'] = txt
-                    elif 680 <= x < 750: rec['GST'] = txt
+                    if x >= 600 and re.match(r'^[A-Z0-9]+,', txt):
+                        for ec in txt.split(','):
+                            ec = ec.strip()
+                            if ec and ec not in all_error_codes and ec not in ['POSTED', 'NOT']:
+                                all_error_codes.append(ec)
+                    elif report_type == 'CP-136':
+                        if 20 <= x < 85: rec['CONN DATE'] = txt
+                        elif 85 <= x < 155: rec['SAN LOAD'] = txt
+                        elif 155 <= x < 200: rec['RU'] = txt
+                        elif 200 <= x < 240: rec['F/P'] = txt
+                        elif 240 <= x < 335: rec['SEASON CD'] = txt
+                        elif 335 <= x < 385: rec['ED CD'] = txt
+                        elif 385 <= x < 445: rec['GVT DEP'] = txt
+                        elif 445 <= x < 500: rec['STD CLSF'] = txt
+                        elif 500 <= x < 535: rec['IT'] = txt
+                        elif 535 <= x < 595: rec['METERS'] = txt
+                        elif 595 <= x < 630: rec['AC'] = txt
+                        elif 630 <= x < 685: rec['NTN'] = txt
+                        elif 685 <= x < 750: rec['GST'] = txt
+                    else:  # CP-137
+                        if 20 <= x < 115: rec['CONN DATE'] = txt
+                        elif 115 <= x < 160: rec['SAN LOAD'] = txt
+                        elif 160 <= x < 200: rec['TRANS. CAPCTY'] = txt
+                        elif 200 <= x < 225: rec['RU'] = txt
+                        elif 225 <= x < 250: rec['F/P'] = txt
+                        elif 250 <= x < 300: rec['SEASON CD'] = txt
+                        elif 300 <= x < 345: rec['CONS. CLASS'] = txt
+                        elif 345 <= x < 380: rec['ED CD'] = txt
+                        elif 380 <= x < 425: rec['GVT DEP'] = txt
+                        elif 425 <= x < 485: rec['STD CLSF'] = txt
+                        elif 485 <= x < 525: rec['IT'] = txt
+                        elif 525 <= x < 600: rec['METERS'] = txt
+                        elif 600 <= x < 630: rec['AC'] = txt
+                        elif 630 <= x < 680: rec['NTN'] = txt
+                        elif 680 <= x < 750: rec['GST'] = txt
 
-            # Block 2 values (between y_b2_hdr and labels)
-            if y_b2_hdr:
+            # Block 2 values (between y_b2_hdr and middle label section)
+            HEADER_WORDS_B2 = {
+                'METER', 'RENT', 'SERVICE', 'SRV', 'N.', 'N', 'ID.', 'ID', 'NUMBER',
+                'TRANSFRMR.', 'TRANSFRMR', 'TRANSFORMER', 'CODE', 'STREET', 'LIGHT', 'CATEGORY',
+                'LINE', 'LENGTH', 'OLD', '(', ')', 'CONTACT', 'NO', 'EMAIL', 'ADDRESS', 'N.I.D'
+            }
+            if y_b2_hdr is not None:
+                # Capture error codes on the header line itself (e.g. TR02, at far right of METER RENT line)
+                for yk in lines:
+                    if abs(yk - y_b2_hdr) <= 6:
+                        for w in lines[yk]:
+                            if w['x0'] >= 600 and re.match(r'^[A-Z0-9]+,', w['text']):
+                                for ec in w['text'].split(','):
+                                    ec = ec.strip()
+                                    if ec and ec not in all_error_codes and ec not in ['POSTED', 'NOT']:
+                                        all_error_codes.append(ec)
+
+                y_max_b2 = (y_mid_hdr - 6) if y_mid_hdr else (y_b2_hdr + 30)
                 b2_words = [
                     w for w in words
-                    if y_b2_hdr + 22 <= w['top'] < (y_b2_hdr + 40)
+                    if y_b2_hdr + 14 <= w['top'] < y_max_b2
                     and not w['text'].startswith('---')
                     and w['text'].upper().rstrip('.') not in HEADER_WORDS_B2
                 ]
                 for w in b2_words:
                     x = w['x0']
                     txt = w['text']
-                    if 20 <= x < 140: rec['METER RENT'] = txt
-                    elif 140 <= x < 210: rec['SRV RENT'] = txt
-                    elif 210 <= x < 285: rec['N .ID NUMBER'] = txt
-                    elif 285 <= x < 380: rec['TRANSFRMR CODE'] = txt
-                    elif 440 <= x < 510: rec['STREET LIGHT CATEGORY'] = txt
-                    elif 510 <= x < 600: rec['STREET LIGHT LINE LENGTH'] = txt
+                    if x >= 600 and re.match(r'^[A-Z0-9]+,', txt):
+                        for ec in txt.split(','):
+                            ec = ec.strip()
+                            if ec and ec not in all_error_codes and ec not in ['POSTED', 'NOT']:
+                                all_error_codes.append(ec)
+                    elif report_type == 'CP-136':
+                        if 20 <= x < 100: rec['METER RENT'] = txt
+                        elif 100 <= x < 170: rec['SRV RENT'] = txt
+                        elif 170 <= x < 260: rec['N .ID NUMBER'] = txt
+                        elif 260 <= x < 370: rec['TRANSFRMR CODE'] = txt
+                        elif 370 <= x < 470: rec['CONTACT #'] = txt
+                        elif 470 <= x < 600: rec['EMAIL ADDRESS'] = txt
+                    else:  # CP-137
+                        if 20 <= x < 140: rec['METER RENT'] = txt
+                        elif 140 <= x < 210: rec['SRV RENT'] = txt
+                        elif 210 <= x < 285: rec['N .ID NUMBER'] = txt
+                        elif 285 <= x < 380: rec['TRANSFRMR CODE'] = txt
+                        elif 440 <= x < 510: rec['STREET LIGHT CATEGORY'] = txt
+                        elif 510 <= x < 600: rec['STREET LIGHT LINE LENGTH'] = txt
 
-            # Key-value label tokens helper
-            def get_label_val(label_tokens, stop_tokens=None, max_w=250):
-                for i in range(len(words) - len(label_tokens) + 1):
+            # Middle Label Section (against headings only, bounded so labels never capture adjacent labels)
+            mid_words = []
+            y_min_mid = (y_b2_hdr + 15) if y_b2_hdr else 210
+            y_max_mid = (y_meter_hdr - 10) if y_meter_hdr else 300
+            for yk in lines:
+                if y_min_mid <= yk <= y_max_mid:
+                    mid_words.extend(lines[yk])
+
+            found_labels = []
+            w_sorted = sorted(mid_words, key=lambda w: (round(w['top'] / 3.0), w['x0']))
+            for label_name, token_list in LABEL_DEFINITIONS:
+                for i in range(len(w_sorted) - len(token_list) + 1):
                     match = True
-                    for k, lt in enumerate(label_tokens):
-                        w = words[i+k]
-                        if w['text'].upper().rstrip(':') != lt.upper().rstrip(':'):
+                    for k, tok in enumerate(token_list):
+                        if w_sorted[i+k]['text'].upper().rstrip(':') != tok.upper().rstrip(':'):
                             match = False
                             break
-                        if k > 0 and abs(w['top'] - words[i]['top']) > 5:
+                        if k > 0 and abs(w_sorted[i+k]['top'] - w_sorted[i]['top']) > 5:
                             match = False
                             break
                     if match:
-                        last_w = words[i + len(label_tokens) - 1]
-                        y = last_w['top']
-                        x_start = last_w['x1']
-                        row_w = [w for w in words if abs(w['top'] - y) <= 4 and x_start < w['x0'] <= x_start + max_w]
-                        vals = []
-                        for rw in row_w:
-                            t = rw['text']
-                            if stop_tokens and any(t.upper().startswith(st) for st in stop_tokens):
-                                break
-                            vals.append(t)
-                        clean_val = ' '.join(vals).strip().lstrip(':').strip()
-                        return clean_val
-                return ''
+                        first_w = w_sorted[i]
+                        last_w = w_sorted[i + len(token_list) - 1]
+                        found_labels.append({
+                            'name': label_name,
+                            'top': first_w['top'],
+                            'x0': first_w['x0'],
+                            'x1': last_w['x1']
+                        })
 
-            common_stops = ['NET', 'MTR', 'LICENSE#', 'CONNECTION', 'TRANSFORMER', 'FATHER', 'ADDRES', 'SIM', 'SET', 'CONTACT', 'EMAIL', 'CONSUMER']
+            for lbl in found_labels:
+                y = lbl['top']
+                x1 = lbl['x1']
+                # Limit horizontal capture to before the next label on the same line (or right margin)
+                next_labels = [ol for ol in found_labels if ol != lbl and abs(ol['top'] - y) <= 4 and ol['x0'] > x1]
+                x_limit = min([ol['x0'] for ol in next_labels]) if next_labels else 750
+                x_limit = min(x_limit, 620)
 
-            val = get_label_val(['NET', 'MTR', 'CD'], stop_tokens=['NET', 'CAP'])
-            if val: rec['NET MTR CD'] = val
-            val = get_label_val(['NET', 'MTR', 'CAP'], stop_tokens=common_stops)
-            if val: rec['NET MTR CAP'] = val
-            val = get_label_val(['NET', 'MTR', 'CONNECTION', 'DATE'], stop_tokens=common_stops)
-            if val: rec['NET MTR CONNECTION DATE'] = val
-            val = get_label_val(['NET', 'MTR', 'EXPIRY', 'DATE'], stop_tokens=common_stops)
-            if val: rec['NET MTR EXPIRY DATE'] = val
-            val = get_label_val(['LICENSE#'], stop_tokens=common_stops)
-            if val: rec['LICENSE#'] = val
-            val = get_label_val(['CONSUMER', 'NAME'], stop_tokens=['CONNECTION', 'TRANSFORMER', 'NET'])
-            if val: rec['CONSUMER NAME'] = val
-            val = get_label_val(['FATHER/HUSBAND', 'NAME'], stop_tokens=['TRANSFORMER', 'NET', 'CONNECTION'])
-            if val: rec['FATHER/HUSBAND NAME'] = val
-            val = get_label_val(['ADDRES', 'LINE', '-1'], stop_tokens=['TRANSFORMER', 'NET'])
-            if val: rec['ADDRES LINE -1'] = val
-            val = get_label_val(['ADDRES', 'LINE', '-2'], stop_tokens=['TRANSFORMER', 'NET'])
-            if val: rec['ADDRES LINE -2'] = val
-            val = get_label_val(['CONTACT', '#'], stop_tokens=['EMAIL', 'CONNECTION'])
-            if val: rec['CONTACT #'] = val
-            val = get_label_val(['EMAIL', 'ADDRESS'], stop_tokens=['CONNECTION'])
-            if val: rec['EMAIL ADDRESS'] = val
-            val = get_label_val(['TRANSFORMER', 'REF', 'NO'], stop_tokens=['NET'])
-            if val: rec['TRANSFORMER REF NO'] = val
-            val = get_label_val(['TRANSFORMER', 'ADDRESS'], stop_tokens=['LICENSE#', 'NET'])
-            if val: rec['TRANSFORMER ADDRESS'] = val
-            val = get_label_val(['CONNECTION', 'CATEGORY', 'CODE'], stop_tokens=['NET'])
-            if val: rec['CONNECTION CATEGORY CODE'] = val
+                val_words = [
+                    w for w in mid_words
+                    if abs(w['top'] - y) <= 4 and (x1 + 2) < w['x0'] < x_limit
+                    and not any(l['x0'] - 2 <= w['x0'] <= l['x1'] + 2 and abs(l['top'] - w['top']) <= 4 for l in found_labels)
+                ]
+                if val_words:
+                    val_str = ' '.join(w['text'] for w in sorted(val_words, key=lambda x: x['x0'])).strip().lstrip(':').strip()
+                    if val_str and val_str not in rec:
+                        norm_key = lbl['name']
+                        if norm_key == 'ADDRESS LINE -1': norm_key = 'ADDRES LINE -1'
+                        if norm_key == 'ADDRESS LINE -2': norm_key = 'ADDRES LINE -2'
+                        rec[norm_key] = val_str
 
-            # Meter Table rows (between y_b3_hdr and y_newref_hdr)
+            # Meter Table rows (between y_meter_hdr and y_newref_hdr)
             meter_rows = []
-            if y_b3_hdr:
-                y_max_m = y_newref_hdr if y_newref_hdr else (y_b3_hdr + 80)
-                m_words = [w for w in words if y_b3_hdr + 12 <= w['top'] < y_max_m and not w['text'].startswith('---') and w['text'] not in ['NEW-REFERENCE-NUMBER', 'New', 'Ref', 'No', 'POSTED', 'NOT']]
-                lines_m = {}
-                for w in m_words:
-                    ly = round(w['top'] / 4.0) * 4.0
-                    lines_m.setdefault(ly, []).append(w)
-                for ly in sorted(lines_m.keys()):
-                    lw = sorted(lines_m[ly], key=lambda x: x['x0'])
+            if y_meter_hdr is not None:
+                y_max_m = (y_newref_hdr - 6) if y_newref_hdr else (y_meter_hdr + 80)
+                m_data_lines = {}
+                for yk in lines:
+                    # Data row must be at least 18pt below y_meter_hdr to skip 2-line header
+                    if y_meter_hdr + 18 <= yk < y_max_m:
+                        lw = lines[yk]
+                        line_str = ' '.join(w['text'].upper() for w in lw)
+                        # Exclude any line containing status or new ref keywords
+                        if any(k in line_str for k in ['NEW REF', 'CANNOT BE POSTED', 'READY FOR POSTING', 'NEW-REFERENCE']):
+                            continue
+                        # Skip line if all words are header words
+                        if all(w['text'].upper().rstrip('.') in HEADER_WORDS_METER for w in lw):
+                            continue
+                        m_data_lines[yk] = sorted(lw, key=lambda x: x['x0'])
+
+                for yk in sorted(m_data_lines.keys()):
+                    lw = m_data_lines[yk]
                     mr = {}
                     for w in lw:
                         x = w['x0']
                         txt = w['text']
-                        if 15 <= x < 55 and txt.isdigit(): mr['SET NO'] = txt
-                        elif 55 <= x < 100: mr['METER TYPE'] = txt
-                        elif 100 <= x < 150: mr['MAIN/S. SET'] = txt
-                        elif 150 <= x < 205: mr['KVARH/KVAH-CD'] = txt
-                        elif 205 <= x < 265: mr['FEEDER CODE'] = txt
-                        elif 265 <= x < 335 and (txt.isdigit() or len(txt) >= 6): mr['METER NO'] = txt
-                        elif 335 <= x < 375: mr['LOC CODE'] = txt
-                        elif 375 <= x < 415: mr['MFG CODE'] = txt
-                        elif 415 <= x < 465: mr['METER CODE'] = txt
-                        elif 465 <= x < 510: mr['M/PLY FACTOR'] = txt
-                        elif 510 <= x < 555: mr['MTR RANGE'] = txt
-                        elif 555 <= x < 640: mr['METER READING'] = txt
-                        elif 640 <= x < 740: mr['ERRORS CODES'] = txt
+                        # Error codes in meter table
+                        if (x >= 540 or re.match(r'^[A-Z0-9]+,', txt)) and x >= 520:
+                            for ec in txt.split(','):
+                                ec = ec.strip()
+                                if ec and ec not in all_error_codes and ec not in ['POSTED', 'NOT']:
+                                    all_error_codes.append(ec)
+                        elif report_type == 'CP-136':
+                            # CP-136 meter columns: SET NO, METER TYPE, FEEDER CODE, METER NO, LOC CODE, MFG CODE, METER CODE, M/PLY FACTOR, MTR RANGE, METER READING, ERRORS CODES
+                            if 15 <= x < 55 and txt.isdigit(): mr['SET NO'] = txt
+                            elif 55 <= x < 110: mr['METER TYPE'] = txt
+                            elif 110 <= x < 185: mr['FEEDER CODE'] = txt
+                            elif 185 <= x < 245: mr['METER NO'] = txt
+                            elif 245 <= x < 290: mr['LOC CODE'] = txt
+                            elif 290 <= x < 340: mr['MFG CODE'] = txt
+                            elif 340 <= x < 390: mr['METER CODE'] = txt
+                            elif 390 <= x < 450: mr['M/PLY FACTOR'] = txt
+                            elif 450 <= x < 485: mr['MTR RANGE'] = txt
+                            elif 485 <= x < 545: mr['METER READING'] = txt
+                        else:
+                            # CP-137 meter columns: SET NO, METER TYPE, MAIN/S. SET, KVARH/KVAH-CD, FEEDER CODE, METER NO, LOC CODE, MFG CODE, METER CODE, M/PLY FACTOR, MTR RNG, METER READING, ERRORS
+                            if 15 <= x < 55 and txt.isdigit(): mr['SET NO'] = txt
+                            elif 55 <= x < 100: mr['METER TYPE'] = txt
+                            elif 100 <= x < 150: mr['MAIN/S. SET'] = txt
+                            elif 150 <= x < 205: mr['KVARH/KVAH-CD'] = txt
+                            elif 205 <= x < 265: mr['FEEDER CODE'] = txt
+                            elif 265 <= x < 335: mr['METER NO'] = txt
+                            elif 335 <= x < 375: mr['LOC CODE'] = txt
+                            elif 375 <= x < 415: mr['MFG CODE'] = txt
+                            elif 415 <= x < 465: mr['METER CODE'] = txt
+                            elif 465 <= x < 510: mr['M/PLY FACTOR'] = txt
+                            elif 510 <= x < 555: mr['MTR RANGE'] = txt
+                            elif 555 <= x < 640: mr['METER READING'] = txt
+
                     if mr:
                         meter_rows.append(mr)
 
-            # NEW-REFERENCE-NUMBER
+            # NEW-REFERENCE-NUMBER block
             if y_newref_hdr:
-                nr_words = [w for w in words if y_newref_hdr + 6 <= w['top'] < y_newref_hdr + 45 and not w['text'].startswith('---')]
+                nr_words = [
+                    w for w in words
+                    if y_newref_hdr + 4 <= w['top'] < y_newref_hdr + 45
+                    and not w['text'].startswith('---')
+                    and w['text'].upper() not in ['CANNOT', 'BE', 'POSTED', 'READY', 'FOR', 'POSTING']
+                ]
                 for w in nr_words:
                     x = w['x0']
                     txt = w['text']
@@ -603,14 +778,18 @@ def parse_single_pdf_file(filepath: str) -> List[Dict[str, Any]]:
                         rec['NEW-REFERENCE-NUMBER'] = txt
                     elif 160 <= x < 235:
                         rec['A/CODE'] = txt
-                    elif 235 <= x < 480 and txt not in ['POSTED', 'NOT']:
+                    elif 235 <= x < 480:
                         rec['BANK NAME'] = (rec.get('BANK NAME', '') + ' ' + txt).strip()
-                    elif 480 <= x < 565 and txt not in ['POSTED', 'NOT']:
+                    elif 480 <= x < 565:
                         rec['AMOUNT'] = txt
-                    elif 565 <= x < 640 and txt not in ['POSTED', 'NOT']:
+                    elif 565 <= x < 640:
                         rec['START DATE'] = txt
-                    elif 640 <= x < 740 and txt not in ['POSTED', 'NOT']:
+                    elif 640 <= x < 740:
                         rec['EXPIRY DATE'] = txt
+
+            # Attach consolidated error codes
+            if all_error_codes:
+                rec['ERRORS CODES'] = ', '.join(all_error_codes)
 
             if meter_rows:
                 for mr in meter_rows:
