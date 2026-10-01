@@ -26,7 +26,7 @@ from pitcsuite.auto_updater import (
 )
 from pitcsuite.tools.integrated_tools import (
     CP22TCheckerPanel, BillScraperPanel, FileMoverPanel,
-    CP52PostingCheckerPanel, CP136PostingCheckerPanel, CP21cConverterPanel
+    CP52PostingCheckerPanel, CP136PostingCheckerPanel, CP139PostingCheckerPanel, CP21cConverterPanel
 )
 
 
@@ -36,8 +36,9 @@ TOOLS = [
     ("E/Bills Downloader",            BillSoftPanel, "ebills"),
     ("Bill Scrapper",                  BillScraperPanel, "bill_scrap"),
     ("Payment Extractor from 88L",    PaymentExtract88LPanel, "payment_ext"),
-    ("CP 52 Posting Checker",         CP52PostingCheckerPanel, "cp52"),
+    ("CP 52 Posting to PDF",          CP52PostingCheckerPanel, "cp52"),
     ("CP136 & 137 Posting Checker",   CP136PostingCheckerPanel, "cp136"),
+    ("CP 139 Posting Checker",        CP139PostingCheckerPanel, "cp139"),
     ("CP 22T Posting Checker",        CP22TCheckerPanel, "cp22t"),
     ("CP21c Converter",               CP21cConverterPanel, "cp21c"),
     ("Double CR Checker",             DoubleCRPanel, "double_cr"),

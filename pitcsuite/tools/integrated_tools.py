@@ -245,7 +245,7 @@ class CP52PostingCheckerPanel(QWidget):
     def __init__(self):
         super().__init__(); self.worker = None
         layout = QVBoxLayout(self); layout.setSpacing(10)
-        layout.addWidget(lbl("CP-52 Posting Checker", bold=True, color="#7eb8f7"))
+        layout.addWidget(lbl("CP 52 Posting to PDF", bold=True, color="#7eb8f7"))
         layout.addWidget(lbl("Match CP-52 posting records from TXT/PDF files and create highlighted PDFs.", color="#556")); layout.addWidget(hline())
         group = QGroupBox("Inputs")
         form = QVBoxLayout(group)
@@ -739,3 +739,7 @@ class CP21cConverterPanel(QWidget):
         self.start_btn.setEnabled(True)
         self.status.setText("Status: Failed")
         notify(self, "Error", msg, critical=True)
+
+
+from pitcsuite.tools.cp139_posting_checker import CP139PostingCheckerPanel, CP139Worker
+

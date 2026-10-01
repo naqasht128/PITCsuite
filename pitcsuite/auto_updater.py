@@ -26,6 +26,13 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.88": [
+        "<b>Brand New Tool — CP 139 Posting Checker:</b> Native integration for parsing WAPDA RCP-139 Unidentified Cash / Debtor's Adjustment posting reports (.txt and .pdf), extracting 14-digit Ref#, 5-digit Sub-Division code, Grand Total amounts, and posting status/errors.",
+        "<b>Accurate Parsing & Multi-File Support:</b> Accurately extracts multi-line record layouts, isolating error reason codes (e.g., G09 for unposted records) and handling recursive folder scans or batch multi-file selections.",
+        "<b>Deduplication & Status Filters:</b> Advanced single postings deduplication engine with configurable priority strategies (<i>Prioritize POSTED</i>, <i>Keep 1st Finding</i>, <i>Keep Last Finding</i>) and instant filtering for Posted vs. Not Posted transactions.",
+        "<b>Live Analytics & Styled Excel Reports:</b> Interactive preview table with real-time statistics cards (Total Records, Posted, Not Pos, Grand Total Sum in Rs.) and professional Excel export with custom header styling, numerical formatting, and color-coded status rows.",
+        "<b>Tool Renaming:</b> Renamed 'CP 52 Posting Checker' to 'CP 52 Posting to PDF' to better reflect its highlighted PDF generation workflow."
+    ],
     "v2.8.87": [
         "<b>Seamless Auto-Update & Process Termination:</b> Hardened application termination upon update to immediately release file locks and prevent 'file in use' errors.",
         "<b>Automated Visible Installation:</b> Automated installer execution with active progress bar display—no manual 'Next' clicks required—and seamless relaunch upon completion.",
@@ -55,7 +62,7 @@ DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
 
 def get_current_version() -> str:
     """Returns the current application version string."""
-    return "v2.8.87"
+    return "v2.8.88"
 
 
 def get_release_notes(ver: str) -> List[str]:
@@ -66,7 +73,7 @@ def get_release_notes(ver: str) -> List[str]:
     with_v = f"v{clean_ver.lstrip('vV')}"
     if with_v in DEFAULT_RELEASE_NOTES:
         return DEFAULT_RELEASE_NOTES[with_v]
-    return DEFAULT_RELEASE_NOTES.get("v2.8.87", [])
+    return DEFAULT_RELEASE_NOTES.get("v2.8.88", [])
 
 
 def parse_version_response(raw_text: str) -> Tuple[str, List[str]]:

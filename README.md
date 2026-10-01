@@ -11,7 +11,7 @@
 
 ## 🌟 Key Highlights
 
-- **14 Integrated Tools:** Complete workflow coverage from automated portal ingestion to billing reconciliation and batch printing, now including CP21c parsing.
+- **15 Integrated Tools:** Complete workflow coverage from automated portal ingestion to billing reconciliation and batch printing, now including CP 139 posting verification.
 - **Polished UX/UI:** Crisp SVG icons, ergonomic file/folder opening directly from completion dialogs, and a responsive PySide6 dark theme.
 - **Fusion Dark Design System:** Clean dark theme with ergonomic color hierarchy (vibrant green primary actions, orange secondary actions, and high-legibility typography).
 - **Collapsible Navigation Drawer:** Fast switching between full label mode and an icon-only compact sidebar.
@@ -29,8 +29,9 @@
 | **🧾 E/Bills Downloader** | Web Automation | High-throughput batch utility bill downloader with automated queuing and retry logic. |
 | **🧮 Bill Scrapper** | Data Extraction | Scrapes and extracts billing metadata and consumer records directly into structured formats. |
 | **💰 Payment Extractor from 88L** | Data Extraction | Parses and extracts payment scrolls and disbursement figures from 88L report sheets. |
-| **📋 CP 52 Posting Checker** | Reconciliation | Automated verification and audit reconciliation for CP-52 cash collection and posting registers. |
+| **📋 CP 52 Posting to PDF** | Reconciliation | Automated verification and audit reconciliation for CP-52 cash collection and posting registers into highlighted PDFs. |
 | **📝 CP136 & 137 Posting Checker** | Reconciliation | Parses WAPDA RCP-136 & CP-137 change posting reports (.txt and .pdf), extracts single postings, deletes duplicate findings, and exports multi-sheet structured Excel workbooks. |
+| **📑 CP 139 Posting Checker** | Reconciliation | Parses WAPDA RCP-139 Unidentified Cash / Debtor's Adjustment posting reports (.txt and .pdf), extracts Ref#, S/Div, Grand Total, and posting status with error codes into styled Excel spreadsheets. |
 | **🧾 CP 22T Posting Checker** | Reconciliation | Verifies and validates CP22T revenue posting transactions against reference records. |
 | **⚡ CP21c Converter** | Data Extraction | Extracts CP-21C electricity meter reading data from PDF and exports it to a structured single-sheet Excel file. |
 | **🔁 Double CR Checker** | Reconciliation | Audits consumer ledger records to detect duplicate consumer references (CR) and redundant postings. |
@@ -59,6 +60,8 @@ PITC Suite
 │   └── tools/                # Modular tool implementations
 │       ├── bill_downloader.py
 │       ├── bill_scraper_logic.py
+│       ├── cp136_posting_checker.py
+│       ├── cp139_posting_checker.py
 │       ├── cp21c_converter.py
 │       ├── cp22t_posting_checker.py
 │       ├── cp52_posting_checker_logic.py
