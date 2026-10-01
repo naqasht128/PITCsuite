@@ -11,6 +11,7 @@ import requests
 import re
 import json
 import threading
+import time
 from typing import List, Dict, Tuple, Optional
 from packaging import version
 from PySide6.QtWidgets import (
@@ -26,6 +27,13 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.89": [
+        "<b>Brand New Tool — CP 139 Posting Checker:</b> Native integration for parsing WAPDA RCP-139 Unidentified Cash / Debtor's Adjustment posting reports (.txt and .pdf), extracting 14-digit Ref#, 5-digit Sub-Division code, Grand Total amounts, and posting status/errors.",
+        "<b>Direct & Streamlined Processing:</b> Export directly to formatted, styled Excel reports with live statistics summary cards without preview table overhead for maximum speed.",
+        "<b>Horizontal Scrolling:</b> Enabled smooth horizontal trackpad, tilt-wheel, and shift+wheel scrolling across the entire right pane for large screens and data tables.",
+        "<b>Tool Renaming:</b> Renamed 'CP 52 Posting Checker' to 'CP 52 Posting to PDF' to better reflect its highlighted PDF generation workflow.",
+        "<b>Automated Update Experience:</b> Visible installation progress bar without requiring manual 'Next' or 'Finish' clicks, automatically restarting upon completion."
+    ],
     "v2.8.88": [
         "<b>Brand New Tool — CP 139 Posting Checker:</b> Native integration for parsing WAPDA RCP-139 Unidentified Cash / Debtor's Adjustment posting reports (.txt and .pdf), extracting 14-digit Ref#, 5-digit Sub-Division code, Grand Total amounts, and posting status/errors.",
         "<b>Accurate Parsing & Multi-File Support:</b> Accurately extracts multi-line record layouts, isolating error reason codes (e.g., G09 for unposted records) and handling recursive folder scans or batch multi-file selections.",
@@ -62,7 +70,11 @@ DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
 
 def get_current_version() -> str:
     """Returns the current application version string."""
-    return "v2.8.88"
+    try:
+        import pitcsuite
+        return f"v{pitcsuite.__version__.lstrip('vV')}"
+    except Exception:
+        return "v2.8.89"
 
 
 def get_release_notes(ver: str) -> List[str]:
@@ -73,7 +85,7 @@ def get_release_notes(ver: str) -> List[str]:
     with_v = f"v{clean_ver.lstrip('vV')}"
     if with_v in DEFAULT_RELEASE_NOTES:
         return DEFAULT_RELEASE_NOTES[with_v]
-    return DEFAULT_RELEASE_NOTES.get("v2.8.88", [])
+    return DEFAULT_RELEASE_NOTES.get("v2.8.89", [])
 
 
 def parse_version_response(raw_text: str) -> Tuple[str, List[str]]:
@@ -584,46 +596,44 @@ def start_download(parent_window, latest_tag=None, notes=None):
             path_dirs = [p for p in path_dirs if p.lower().rstrip(r'\/') != meipass]
             env['PATH'] = os.pathsep.join(path_dirs)
             
-        # Launch Setup.exe with /SILENT /SP- /SUPPRESSMSGBOXES /FORCECLOSEAPPLICATIONS /AUTOUPDATE=1
-        # - /SILENT keeps the progress window and progress bar visible on screen while suppressing "Next" click wizard prompts
+        # Launch Setup.exe with /SILENT /SP- /FORCECLOSEAPPLICATIONS /AUTOUPDATE=1
+        # - /SILENT keeps the installation progress bar visible on screen while suppressing "Next" click wizard prompts
         # - /SP- disables the initial "Do you wish to continue?" prompt
-        # - /SUPPRESSMSGBOXES suppresses non-critical installer prompts
         # - /FORCECLOSEAPPLICATIONS forcefully closes running applications using files that need updating
         # - /AUTOUPDATE=1 instructs installer to auto-relaunch pitcsuite.exe upon completion
         installer_args = [
             path,
             "/SILENT",
             "/SP-",
-            "/SUPPRESSMSGBOXES",
             "/FORCECLOSEAPPLICATIONS",
             "/AUTOUPDATE=1"
         ]
 
-        # Launch installer via Windows Shell (os.startfile) so it runs as an independent root process
-        # completely outside pitcsuite.exe's process tree, preventing any parent-child termination issues.
-        launched = False
-        args_str = "/SILENT /SP- /SUPPRESSMSGBOXES /FORCECLOSEAPPLICATIONS /AUTOUPDATE=1"
-        if sys.platform == 'win32' and hasattr(os, 'startfile'):
-            try:
-                os.startfile(path, "open", arguments=args_str)
-                launched = True
-            except Exception:
-                launched = False
+        creation_flags = 0
+        if sys.platform == 'win32':
+            creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
+            if hasattr(subprocess, 'DETACHED_PROCESS'):
+                creation_flags |= subprocess.DETACHED_PROCESS
 
-        if not launched:
-            creation_flags = 0
-            if sys.platform == 'win32':
-                creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
-                if hasattr(subprocess, 'DETACHED_PROCESS'):
-                    creation_flags |= subprocess.DETACHED_PROCESS
-
+        # Reliably spawn detached installer process directly using OS CreateProcessW
+        try:
             subprocess.Popen(
-                [path] + args_str.split(),
+                installer_args,
                 env=env,
                 creationflags=creation_flags
             )
-        
-        # Immediately exit process forcefully to release executable and DLL file locks instantly,
+        except Exception:
+            # Fallback to ShellExecute if CreateProcess direct fails
+            if sys.platform == 'win32' and hasattr(os, 'startfile'):
+                try:
+                    os.startfile(path, "open", arguments=" ".join(installer_args[1:]))
+                except Exception:
+                    pass
+
+        # Brief pause to ensure the OS process creation handshake completes fully
+        time.sleep(0.4)
+
+        # Forcefully exit process to release executable and DLL file locks instantly,
         # preventing "file in use" errors during update
         try:
             app_inst = QApplication.instance()

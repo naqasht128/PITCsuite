@@ -2,7 +2,7 @@
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 AppName=PITC Suite
-AppVersion=2.8.88
+AppVersion=2.8.89
 AppPublisher=Tahir Naqash
 DefaultDirName={localappdata}\Programs\PITCSuite
 DefaultGroupName=PITC Suite
