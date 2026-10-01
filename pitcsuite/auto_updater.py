@@ -584,16 +584,23 @@ def start_download(parent_window, latest_tag=None, notes=None):
         msg.addButton("Install Update", QMessageBox.AcceptRole)
         msg.exec()
         
-        # Strip PyInstaller's _PYI_* environment variables to prevent child process conflicts
+        # Strip all PyInstaller, Python, and Tk environment variables to prevent child process conflicts
         env = os.environ.copy()
-        keys_to_remove = [k for k in env if k.startswith('_PYI_') or k.startswith('TCL_') or k.startswith('TK_')]
+        keys_to_remove = [
+            k for k in env
+            if k.startswith('_PYI')
+            or k.startswith('_MEI')
+            or k.startswith('PYTHON')
+            or k.startswith('TCL')
+            or k.startswith('TK')
+        ]
         for k in keys_to_remove:
             env.pop(k, None)
             
         if hasattr(sys, '_MEIPASS'):
             meipass = sys._MEIPASS.lower()
             path_dirs = env.get('PATH', '').split(os.pathsep)
-            path_dirs = [p for p in path_dirs if p.lower().rstrip(r'\/') != meipass]
+            path_dirs = [p for p in path_dirs if p.lower().rstrip(r'\/') != meipass and '_mei' not in p.lower()]
             env['PATH'] = os.pathsep.join(path_dirs)
             
         # Launch Setup.exe with /SILENT /SP- /FORCECLOSEAPPLICATIONS /AUTOUPDATE=1

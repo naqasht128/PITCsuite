@@ -33,10 +33,19 @@ Filename: "{app}\pitcsuite.exe"; Description: "Launch PITC Suite"; Flags: nowait
 Filename: "{app}\pitcsuite.exe"; Flags: nowait shellexec; Check: IsAutoUpdate; WorkingDir: "{app}"
 
 [Code]
+function SetEnvironmentVariable(lpName, lpValue: string): BOOL;
+external 'SetEnvironmentVariableW@kernel32.dll stdcall';
+
 function InitializeSetup(): Boolean;
 var
   ResultCode: Integer;
 begin
+  // Clear any inherited PyInstaller variables so the relaunched app unpacks cleanly
+  SetEnvironmentVariable('_MEIPASS2', '');
+  SetEnvironmentVariable('_MEIPASS', '');
+  SetEnvironmentVariable('PYTHONHOME', '');
+  SetEnvironmentVariable('PYTHONPATH', '');
+
   // Terminate any running or lingering instances of pitcsuite.exe (without /T so installer itself is never terminated)
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM pitcsuite.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(400);
