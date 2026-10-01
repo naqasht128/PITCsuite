@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QStackedWidget, QFrame, QLineEdit, QSpinBox, QSizePolicy, QScrollArea,
     QAbstractScrollArea, QBoxLayout, QDialog, QApplication
 )
-from PySide6.QtCore import Qt, QSize, QTimer, QSettings
+from PySide6.QtCore import Qt, QSize, QTimer, QSettings, QEvent, QObject
 from PySide6.QtGui import QPixmap
 
 from pitcsuite.icons import app_icon, pdf_merger_icon, get_icon
@@ -134,6 +134,121 @@ class AboutDialog(QDialog):
         dlg = UpToDateDialog(get_current_version(), notes, self)
         dlg.exec()
 
+
+class FramelessScrollArea(QScrollArea):
+    """
+    Scroll area with invisible scroll bars that supports:
+    - Vertical wheel scrolling (standard mouse wheel)
+    - Horizontal wheel scrolling (Shift + Wheel, Alt + Wheel)
+    - Touchpad 2-finger horizontal swipe and mouse tilt wheel
+    - Middle-click mouse drag to pan smoothly in both directions
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._is_panning = False
+        self._pan_start = None
+        self._h_start = 0
+        self._v_start = 0
+
+    def wheelEvent(self, event):
+        # 1. Native horizontal delta (touchpad 2-finger horizontal swipe or tilt wheel)
+        dx = event.angleDelta().x()
+        pixel_dx = event.pixelDelta().x() if hasattr(event, "pixelDelta") else 0
+        if pixel_dx != 0:
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - pixel_dx)
+            event.accept()
+            return
+        elif dx != 0:
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - dx)
+            event.accept()
+            return
+
+        # 2. Shift or Alt + Mouse Wheel -> horizontal scroll
+        modifiers = event.modifiers()
+        if modifiers & (Qt.ShiftModifier | Qt.AltModifier):
+            dy = event.angleDelta().y()
+            pixel_dy = event.pixelDelta().y() if hasattr(event, "pixelDelta") else 0
+            if pixel_dy != 0:
+                self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - pixel_dy)
+                event.accept()
+                return
+            elif dy != 0:
+                self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - dy)
+                event.accept()
+                return
+
+        super().wheelEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MiddleButton:
+            self._is_panning = True
+            pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            self._pan_start = pos
+            self._h_start = self.horizontalScrollBar().value()
+            self._v_start = self.verticalScrollBar().value()
+            self.viewport().setCursor(Qt.ClosedHandCursor)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._is_panning and self._pan_start is not None:
+            pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            delta = pos - self._pan_start
+            self.horizontalScrollBar().setValue(self._h_start - delta.x())
+            self.verticalScrollBar().setValue(self._v_start - delta.y())
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._is_panning and event.button() == Qt.MiddleButton:
+            self._is_panning = False
+            self._pan_start = None
+            self.viewport().unsetCursor()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+
+class ScrollEventFilter(QObject):
+    """
+    Event filter installed on child widgets and panels to ensure that:
+    - Shift + Wheel (and Alt + Wheel)
+    - Touchpad horizontal swipe
+    - Middle-click drag
+    are forwarded to the outer FramelessScrollArea instead of being consumed by child widgets.
+    """
+    def __init__(self, scroll_area: FramelessScrollArea):
+        super().__init__(scroll_area)
+        self.scroll_area = scroll_area
+
+    def eventFilter(self, watched, event):
+        etype = event.type()
+        if etype == QEvent.Wheel:
+            # If horizontal intent: Shift or Alt is held, or horizontal delta is present
+            if (event.modifiers() & (Qt.ShiftModifier | Qt.AltModifier)) or event.angleDelta().x() != 0:
+                self.scroll_area.wheelEvent(event)
+                return True
+        elif etype == QEvent.MouseButtonPress and event.button() == Qt.MiddleButton:
+            self.scroll_area.mousePressEvent(event)
+            return True
+        elif etype == QEvent.MouseMove and getattr(self.scroll_area, '_is_panning', False):
+            self.scroll_area.mouseMoveEvent(event)
+            return True
+        elif etype == QEvent.MouseButtonRelease and getattr(self.scroll_area, '_is_panning', False) and event.button() == Qt.MiddleButton:
+            self.scroll_area.mouseReleaseEvent(event)
+            return True
+        elif etype == QEvent.ChildAdded and hasattr(event, "child") and event.child().isWidgetType():
+            event.child().installEventFilter(self)
+        return False
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -219,12 +334,14 @@ class MainWindow(QMainWindow):
                 edit.setMinimumWidth(70)
                 edit.setMaximumWidth(16777215)
                 edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            scroll = QScrollArea()
-            scroll.setWidgetResizable(True)
-            scroll.setFrameShape(QFrame.NoFrame)
-            scroll.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+            scroll = FramelessScrollArea()
             scroll.setWidget(panel)
-            # Hide the controls without disabling wheel, touchpad or keyboard scrolling.
+            filt = ScrollEventFilter(scroll)
+            panel.installEventFilter(filt)
+            for child in panel.findChildren(QWidget):
+                child.installEventFilter(filt)
+                if isinstance(child, QAbstractScrollArea):
+                    child.viewport().installEventFilter(filt)
             for area in [scroll, *panel.findChildren(QAbstractScrollArea)]:
                 area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
                 area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)

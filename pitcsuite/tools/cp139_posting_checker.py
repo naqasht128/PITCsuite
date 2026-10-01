@@ -19,10 +19,10 @@ from openpyxl.utils import get_column_letter
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
-    QListWidget, QGroupBox, QComboBox, QCheckBox, QTextEdit, QTableWidget,
-    QTableWidgetItem, QHeaderView, QFileDialog, QMessageBox, QFrame
+    QListWidget, QGroupBox, QComboBox, QCheckBox, QTextEdit,
+    QFileDialog, QMessageBox, QFrame
 )
-from PySide6.QtGui import QColor
+
 
 from pitcsuite.ui_helpers import START_BTN, STOP_BTN, hline, lbl, notify
 
@@ -430,7 +430,6 @@ class CP139PostingCheckerPanel(QWidget):
         self.worker = None
         self.file_paths = []
         self.last_output = ""
-        self.current_records = []
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
@@ -479,7 +478,7 @@ class CP139PostingCheckerPanel(QWidget):
         out_row.addWidget(QLabel("Output destination:"))
         self.out_ed = QLineEdit()
         self.out_ed.setPlaceholderText("Auto-generated alongside source files if left blank")
-        out_row.addWidget(self.out_ed, 3)
+        out_row.addWidget(self.out_ed, 1)
 
         browse_file_btn = QPushButton("📄 File...")
         browse_file_btn.clicked.connect(self._browse_file)
@@ -488,37 +487,38 @@ class CP139PostingCheckerPanel(QWidget):
         browse_folder_btn = QPushButton("📁 Folder...")
         browse_folder_btn.clicked.connect(self._browse_folder)
         out_row.addWidget(browse_folder_btn)
-        out_row.addStretch(1)
         form_out.addLayout(out_row)
 
-        # Deduplication and filters
-        opts_row = QHBoxLayout()
+        # Deduplication row
+        dedup_row = QHBoxLayout()
         self.single_chk = QCheckBox("Single Postings only")
         self.single_chk.setChecked(False)
         self.single_chk.toggled.connect(self._on_dedup_toggled)
-        opts_row.addWidget(self.single_chk)
+        dedup_row.addWidget(self.single_chk)
 
-        opts_row.addWidget(QLabel("Strategy:"))
+        dedup_row.addWidget(QLabel("Strategy:"))
         self.dedup_mode = QComboBox()
         self.dedup_mode.addItem("Prioritize POSTED (Recommended)", "prefer_posted")
         self.dedup_mode.addItem("Strictly Keep 1st Finding", "first")
         self.dedup_mode.addItem("Keep Last Finding", "last")
         self.dedup_mode.setEnabled(False)
-        opts_row.addWidget(self.dedup_mode)
+        dedup_row.addWidget(self.dedup_mode)
+        dedup_row.addStretch()
+        form_out.addLayout(dedup_row)
 
-        opts_row.addSpacing(15)
-        opts_row.addWidget(QLabel("Status Filter:"))
+        # Status and extra filters row
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Status Filter:"))
         self.status_filter_cb = QComboBox()
         self.status_filter_cb.addItem("All Records", "all")
         self.status_filter_cb.addItem("Posted Only", "posted")
         self.status_filter_cb.addItem("Not Pos Only", "not_pos")
-        opts_row.addWidget(self.status_filter_cb)
+        filter_row.addWidget(self.status_filter_cb)
 
         self.file_chk = QCheckBox("Include Source File")
-        opts_row.addWidget(self.file_chk)
-
-        opts_row.addStretch()
-        form_out.addLayout(opts_row)
+        filter_row.addWidget(self.file_chk)
+        filter_row.addStretch()
+        form_out.addLayout(filter_row)
         layout.addWidget(group_out)
 
         # Summary Metric Cards Row
@@ -572,27 +572,10 @@ class CP139PostingCheckerPanel(QWidget):
         self.status.setStyleSheet("color:#4a90d9;")
         layout.addWidget(self.status)
 
-        # Live Table Preview
-        preview_group = QGroupBox("Extracted Records Preview")
-        preview_layout = QVBoxLayout(preview_group)
-        self.table = QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["Ref#", "S/Div", "G. Total", "Status / Errors", "Source File"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
-        self.table.setMaximumHeight(160)
-        self.table.setMinimumHeight(110)
-        self.table.setAlternatingRowColors(True)
-        preview_layout.addWidget(self.table)
-        layout.addWidget(preview_group)
-
         # Log Box
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
-        self.log_box.setMaximumHeight(110)
+        self.log_box.setMinimumHeight(130)
         layout.addWidget(self.log_box)
 
     def _create_stat_badge(self, title: str, initial_val: str, color_hex: str) -> QFrame:
@@ -658,8 +641,6 @@ class CP139PostingCheckerPanel(QWidget):
         self.file_paths.clear()
         self.file_list.clear()
         self.out_ed.clear()
-        self.table.setRowCount(0)
-        self.current_records.clear()
         self.card_files.value_label.setText("0")
         self.card_total.value_label.setText("0")
         self.card_posted.value_label.setText("0")
@@ -705,7 +686,6 @@ class CP139PostingCheckerPanel(QWidget):
             out_path = self.out_ed.text().strip()
 
         self.log_box.clear()
-        self.table.setRowCount(0)
         self.status.setText("Status: Processing CP-139 reports...")
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
@@ -740,7 +720,6 @@ class CP139PostingCheckerPanel(QWidget):
 
     def _done(self, saved_path: str, stats: dict, records: list):
         self.last_output = saved_path
-        self.current_records = records
         self.status.setText(f"Status: Finished successfully. Output generated at {os.path.basename(saved_path)}")
         self.open_excel_btn.setEnabled(True)
         self.open_folder_btn.setEnabled(True)
@@ -751,39 +730,6 @@ class CP139PostingCheckerPanel(QWidget):
         self.card_not_pos.value_label.setText(str(stats.get("not_pos", 0)))
         amt = stats.get("total_amount", 0)
         self.card_amount.value_label.setText(f"Rs. {amt:,.0f}")
-
-        # Populate Table Preview (first 250 items to keep UI snappy)
-        preview_recs = records[:250]
-        self.table.setRowCount(len(preview_recs))
-        for row_idx, r in enumerate(preview_recs):
-            it_ref = QTableWidgetItem(str(r["Ref#"]))
-            it_ref.setTextAlignment(Qt.AlignCenter)
-
-            it_sdiv = QTableWidgetItem(str(r["S/Div"]))
-            it_sdiv.setTextAlignment(Qt.AlignCenter)
-
-            gt = r["G. Total"]
-            gt_str = f"{gt:,.2f}" if isinstance(gt, float) else f"{gt:,}" if isinstance(gt, int) else str(gt)
-            it_gt = QTableWidgetItem(gt_str)
-            it_gt.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-
-            detail = r.get("Error_Detail", r.get("Errors", ""))
-            it_err = QTableWidgetItem(detail)
-            it_err.setTextAlignment(Qt.AlignCenter)
-
-            # Color coding
-            if r.get("Errors") == "Posted":
-                it_err.setForeground(QColor("#10B981"))
-            else:
-                it_err.setForeground(QColor("#EF4444"))
-
-            it_src = QTableWidgetItem(str(r.get("Source_File", "")))
-
-            self.table.setItem(row_idx, 0, it_ref)
-            self.table.setItem(row_idx, 1, it_sdiv)
-            self.table.setItem(row_idx, 2, it_gt)
-            self.table.setItem(row_idx, 3, it_err)
-            self.table.setItem(row_idx, 4, it_src)
 
         msg_body = (
             f"Processed {len(self.file_paths)} report file(s).\n\n"
