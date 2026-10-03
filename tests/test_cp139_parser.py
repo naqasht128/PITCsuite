@@ -51,6 +51,47 @@ class TestCP139Parser(unittest.TestCase):
             self.assertEqual(r["S/Div"], r["Ref#"][2:7])
             self.assertGreater(r["G. Total"], 0)
 
+    def test_parse_proof_list_adjustor(self):
+        proof_file = r"D:\Projects\CP_139_PROOF_LIST_ADJUSTOR_30092026_26_2606_.txt"
+        if not os.path.exists(proof_file):
+            self.skipTest("Proof list file not found")
+        
+        # Test both with and without .txt extension
+        records = parse_cp139_file(proof_file)
+        self.assertEqual(len(records), 180)
+
+        # Test without extension as well
+        records_no_ext = parse_cp139_file(r"D:\Projects\CP_139_PROOF_LIST_ADJUSTOR_30092026_26_2606_")
+        self.assertEqual(len(records_no_ext), 180)
+
+        posted = [r for r in records if r["Errors"] == "Posted"]
+        not_pos = [r for r in records if r["Errors"] == "Not Pos"]
+        self.assertEqual(len(posted), 155)
+        self.assertEqual(len(not_pos), 25)
+
+        total_amount = sum(r["G. Total"] for r in records)
+        self.assertEqual(total_amount, 124785544)
+
+        posted_amount = sum(r["G. Total"] for r in posted)
+        self.assertEqual(posted_amount, 117984880)
+
+        not_pos_amount = sum(r["G. Total"] for r in not_pos)
+        self.assertEqual(not_pos_amount, 6800664)
+
+        for r in records:
+            self.assertIn(len(r["Ref#"]), (13, 14))
+            self.assertTrue(r["Ref#"].isdigit())
+            self.assertEqual(len(r["S/Div"]), 5)
+            self.assertEqual(r["S/Div"], r["Ref#"][2:7])
+            self.assertGreater(r["G. Total"], 0)
+
+        # Verify error details captured error codes
+        not_pos_codes = [r["Error_Detail"] for r in not_pos]
+        self.assertTrue(any("R27,R23,NPV" in c for c in not_pos_codes))
+        self.assertTrue(any("NPV" in c for c in not_pos_codes))
+        self.assertTrue(any("DUP" in c for c in not_pos_codes))
+
+
     def test_deduplication(self):
         sample_recs = [
             {"Ref#": "01234567890123", "S/Div": "23456", "G. Total": 100, "Errors": "Not Pos", "Error_Detail": "Not Pos (G09)"},

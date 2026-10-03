@@ -27,20 +27,54 @@ from PySide6.QtWidgets import (
 from pitcsuite.ui_helpers import START_BTN, STOP_BTN, hline, lbl, notify
 
 
+def _match_record_start(line_str: str) -> Optional[str]:
+    """
+    Check if a line represents the start of a record row.
+    Returns the reference number (13 or 14 digits) or None.
+    Handles:
+      - Format 1 (Posting List): begins directly with Ref# (13 or 14 digits)
+      - Format 2 (Proof List / Adjustor): begins with RecNo (1-6 digits) followed by Ref# (13 or 14 digits)
+    """
+    if any(h in line_str for h in (
+        "Report", "PROCESSING", "DIVISION", "TRANSACTION", "TRANS.",
+        "RecNo.", "Rec #", "DATE & TIME", "Statistical Summary", "TOTAL"
+    )):
+        return None
+
+    # Format 2: RecNo (1-6 digits) followed by whitespace and 13-14 digit Ref#
+    m2 = re.match(r"^\s*\d{1,6}\s+(\d{13,14})\b", line_str)
+    if m2:
+        return m2.group(1)
+
+    # Format 1: Starts directly with 13-14 digit Ref#
+    m1 = re.match(r"^\s*(\d{13,14})\b", line_str)
+    if m1:
+        return m1.group(1)
+
+    return None
+
+
 def parse_cp139_file(filepath: str) -> List[Dict[str, Any]]:
     """
     Parse a single CP-139 posting report text (.txt) or PDF (.pdf) file.
+    Supports both Posting List format (with 14-digit Ref#) and Proof List / Adjustor format
+    (with RecNo, 13/14-digit Ref#, RFP/NR status flags).
     Returns list of dicts with keys:
-      - 'Ref#': 14-digit string
+      - 'Ref#': 13 or 14-digit string
       - 'S/Div': 5-digit sub-division string
       - 'G. Total': numeric float/int
       - 'Errors': 'Posted' or 'Not Pos'
-      - 'Error_Detail': status with error code if found, e.g. 'Not Pos (G09)'
+      - 'Error_Detail': status with error code if found, e.g. 'Not Pos (G09)' or 'Not Pos (NPV)'
       - 'Source_File': filename
     """
     records = []
     if not os.path.isfile(filepath):
-        return records
+        if os.path.isfile(filepath + ".txt"):
+            filepath = filepath + ".txt"
+        elif os.path.isfile(filepath + ".pdf"):
+            filepath = filepath + ".pdf"
+        else:
+            return records
 
     filename = os.path.basename(filepath)
     ext = os.path.splitext(filepath)[1].lower()
@@ -63,10 +97,8 @@ def parse_cp139_file(filepath: str) -> List[Dict[str, Any]]:
     i = 0
     while i < n:
         line = lines[i]
-        # Match 14-digit reference number at the beginning of a record row
-        m = re.match(r"^\s*(\d{14})\b", line)
-        if m:
-            ref = m.group(1)
+        ref = _match_record_start(line)
+        if ref:
             s_div = ref[2:7]  # WAPDA sub-division is digits 3 to 7
 
             # G. Total is in line i+1 (under Ins. Bill Amt / G. Total header)
@@ -93,25 +125,37 @@ def parse_cp139_file(filepath: str) -> List[Dict[str, Any]]:
                     except ValueError:
                         g_total_val = clean_str
 
-            # Errors: check lines from i to i+5 for 'Posted' or 'Not Pos'
+            # Errors: check lines from i to i+7 for 'Posted', 'RFP', 'Not Pos', or 'NR'
             # Stop if another record begins or page break occurs
             status = "Posted"  # default
             err_code = ""
-            for j in range(i, min(i + 6, n)):
+            for j in range(i, min(i + 8, n)):
                 if j > i:
-                    if re.match(r"^\s*(\d{14})\b", lines[j]) or "\x0c" in lines[j] or "Report  RCP-139" in lines[j]:
+                    if _match_record_start(lines[j]) or "\x0c" in lines[j] or "Report" in lines[j] or "Statistical Summary" in lines[j]:
                         break
 
                 row_str = lines[j]
-                if "Not Pos" in row_str:
+                if "Not Pos" in row_str or re.search(r"\bNR\b", row_str):
                     status = "Not Pos"
-                    # Check next line for error code such as G09
-                    if j + 1 < n:
+                    # Check next line for error code such as G09 (Format 1)
+                    if "Not Pos" in row_str and j + 1 < n:
                         code_m = re.search(r"\b([A-Z]\d{2,3})\b", lines[j + 1])
                         if code_m:
                             err_code = code_m.group(1)
+                    if not err_code:
+                        # Check same line and next lines for error tokens (Format 2: e.g. R27,R23,NPV, NPV, DUP)
+                        for k in range(j, min(j + 2, n)):
+                            cand = lines[k]
+                            if k == j:
+                                cand = re.sub(r"\bNR\b", "", cand)
+                            code_m = re.search(r"\b([A-Z][A-Z0-9]*(?:,[A-Z0-9]+)*)\b", cand)
+                            if code_m and code_m.group(1) not in (
+                                "REPORT", "RCP", "DATE", "DIVISION", "TRANSACTION", "TOTAL", "ED", "CD", "GD"
+                            ):
+                                err_code = code_m.group(1)
+                                break
                     break
-                elif "Posted" in row_str:
+                elif "Posted" in row_str or re.search(r"\bRFP\b", row_str):
                     status = "Posted"
 
             detail = f"{status} ({err_code})" if err_code else status
@@ -763,3 +807,22 @@ class CP139PostingCheckerPanel(QWidget):
             folder = os.path.dirname(os.path.abspath(self.last_output))
             if os.path.exists(folder):
                 os.startfile(folder)
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1:
+        target_path = sys.argv[1]
+        out_excel = sys.argv[2] if len(sys.argv) > 2 else os.path.splitext(target_path)[0] + "_Results.xlsx"
+        print(f"Parsing: {target_path}")
+        recs = parse_cp139_file(target_path)
+        print(f"Extracted {len(recs)} record(s).")
+        stats = export_cp139_to_excel(recs, out_excel, include_source_file=True)
+        print("Excel report generated successfully:", stats)
+    else:
+        from PySide6.QtWidgets import QApplication
+        app = QApplication(sys.argv)
+        panel = CP139PostingCheckerPanel()
+        panel.show()
+        sys.exit(app.exec())
+
