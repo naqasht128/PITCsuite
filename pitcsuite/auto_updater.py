@@ -28,9 +28,10 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
     "v2.8.91": [
-        "<b>Brand New Tool — Assessment & Realization Extractor:</b> Native tool to import WAPDA Assessment & Realization text reports (.txt) for Government Departments and extract structured consumer billing data into professionally styled Excel workbooks.",
-        "<b>Exact Template Alignment:</b> Extracts all 12 key attributes matching official requirements (Sdiv, Reference No, Status, Name & Address, Tariff, Department Code, Arrear Age, OP. Balance, Payments Normal, Adjustor, Write Off, Net Arrear).",
-        "<b>Streamlined Single-File UI:</b> Clean single-file text report import, automatic Excel path suggestions, and one-click opening of output files and directories."
+        "<b>Brand New Tool — Govt Assessment Realization:</b> Native tool to import WAPDA Assessment & Realization text reports (.txt) and extract structured consumer billing data into professionally styled Excel workbooks matching official templates.",
+        "<b>Exact 12-Column Extraction:</b> Accurately extracts Ref No, Batch No, Sub Div, Cons Name, Month, Triff, Reading, Assessed Amount, Total Amount, Realized Amount, Balance Amount, and Status (Disconnected/Running).",
+        "<b>Streamlined Single-File UI:</b> Simplified single-file import with automatic Excel output naming, fast processing, and one-click opening of output files and folders.",
+        "<b>UI Refinements & Renaming:</b> Renamed 'CP136_137 Posting Checker' to 'CP 136 & 137 Posting Checker' and streamlined CP 139 Posting Checker interface."
     ],
     "v2.8.90": [
         "<b>CP 139 Proof List & Adjustor Support:</b> Added complete parsing support for WAPDA CP 139 Proof List (Adjustor) reports, extracting record numbers, 13-digit and 14-digit reference numbers, and auto-deriving 5-digit sub-division codes.",
