@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
-hidden_imports = ['openpyxl', 'pypdf', 'fitz', 'pyotp', 'PIL', 'pandas', 'pyautogui', 'requests', 'urllib3']
+hidden_imports = ['openpyxl', 'pypdf', 'fitz', 'pdfplumber', 'pyotp', 'PIL', 'pandas', 'pyautogui', 'requests', 'urllib3']
 hidden_imports += collect_submodules('selenium')
 hidden_imports += collect_submodules('webdriver_manager')
 

@@ -348,7 +348,7 @@ class CP136PostingCheckerPanel(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
-        layout.addWidget(lbl("CP136 & 137 Posting Checker", bold=True, color="#7eb8f7"))
+        layout.addWidget(lbl("CP 136 & 137 Posting Checker", bold=True, color="#7eb8f7"))
         layout.addWidget(lbl("Extract 14-figure Ref Nos, single postings, and field modifications from WAPDA RCP-136 & CP-137 reports into structured Excel.", color="#556"))
         layout.addWidget(hline())
 
@@ -742,4 +742,5 @@ class CP21cConverterPanel(QWidget):
 
 
 from pitcsuite.tools.cp139_posting_checker import CP139PostingCheckerPanel, CP139Worker
+from pitcsuite.tools.assessment_realization import AssessmentRealizationPanel, AssessmentRealizationWorker
 

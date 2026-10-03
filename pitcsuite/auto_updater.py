@@ -27,6 +27,16 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.91": [
+        "<b>Brand New Tool — Assessment & Realization Extractor:</b> Native tool to import WAPDA Assessment & Realization text reports (.txt) for Government Departments and extract structured consumer billing data into professionally styled Excel workbooks.",
+        "<b>Exact Template Alignment:</b> Extracts all 12 key attributes matching official requirements (Sdiv, Reference No, Status, Name & Address, Tariff, Department Code, Arrear Age, OP. Balance, Payments Normal, Adjustor, Write Off, Net Arrear).",
+        "<b>Streamlined Single-File UI:</b> Clean single-file text report import, automatic Excel path suggestions, and one-click opening of output files and directories."
+    ],
+    "v2.8.90": [
+        "<b>CP 139 Proof List & Adjustor Support:</b> Added complete parsing support for WAPDA CP 139 Proof List (Adjustor) reports, extracting record numbers, 13-digit and 14-digit reference numbers, and auto-deriving 5-digit sub-division codes.",
+        "<b>RFP & NR Status & Error Isolation:</b> Accurately maps <code>RFP</code> (Ready For Posting) to <i>Posted</i> and <code>NR</code> (Not Recorded) to <i>Not Pos</i>, extracting error reason codes (e.g. <code>R27,R23,NPV</code>, <code>NPV</code>, <code>DUP</code>, <code>G09</code>).",
+        "<b>Resilient File Handling & Reporting:</b> Automatically resolves file paths with or without file extensions, generates formatted Excel reports matching report statistical summaries with 100% precision, and supports single-posting deduplication."
+    ],
     "v2.8.89": [
         "<b>Brand New Tool — CP 139 Posting Checker:</b> Native integration for parsing WAPDA RCP-139 Unidentified Cash / Debtor's Adjustment posting reports (.txt and .pdf), extracting 14-digit Ref#, 5-digit Sub-Division code, Grand Total amounts, and posting status/errors.",
         "<b>Direct & Streamlined Processing:</b> Export directly to formatted, styled Excel reports with live statistics summary cards without preview table overhead for maximum speed.",
@@ -74,7 +84,7 @@ def get_current_version() -> str:
         import pitcsuite
         return f"v{pitcsuite.__version__.lstrip('vV')}"
     except Exception:
-        return "v2.8.89"
+        return "v2.8.91"
 
 
 def get_release_notes(ver: str) -> List[str]:
@@ -85,7 +95,7 @@ def get_release_notes(ver: str) -> List[str]:
     with_v = f"v{clean_ver.lstrip('vV')}"
     if with_v in DEFAULT_RELEASE_NOTES:
         return DEFAULT_RELEASE_NOTES[with_v]
-    return DEFAULT_RELEASE_NOTES.get("v2.8.89", [])
+    return DEFAULT_RELEASE_NOTES.get("v2.8.91", [])
 
 
 def parse_version_response(raw_text: str) -> Tuple[str, List[str]]:

@@ -3,7 +3,7 @@
 [![Python Version](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.14-blue.svg)](https://www.python.org/)
 [![GUI Framework](https://img.shields.io/badge/GUI-PySide6%20(Qt6)-41cd52.svg)](https://wiki.qt.io/Qt_for_Python)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078d6.svg)](https://www.microsoft.com/windows)
-[![Version](https://img.shields.io/badge/version-2.4.0-orange.svg)](#)
+[![Version](https://img.shields.io/badge/version-2.8.91-orange.svg)](#)
 
 **PITC Suite** is an all-in-one desktop productivity and automation suite designed for utility billing operations, power sector reconciliation, and batch document processing. Built on **PySide6 (Qt 6)**, it combines automated scraping, 2FA-secured portal downloads, ledger audit checkers, and industrial-grade PDF manipulation tools into a unified, responsive interface.
 
@@ -11,7 +11,7 @@
 
 ## 🌟 Key Highlights
 
-- **15 Integrated Tools:** Complete workflow coverage from automated portal ingestion to billing reconciliation and batch printing, now including CP 139 posting verification.
+- **16 Integrated Tools:** Complete workflow coverage from automated portal ingestion to billing reconciliation and batch printing, now including Government Assessment & Realization extraction and CP 139 posting verification.
 - **Polished UX/UI:** Crisp SVG icons, ergonomic file/folder opening directly from completion dialogs, and a responsive PySide6 dark theme.
 - **Fusion Dark Design System:** Clean dark theme with ergonomic color hierarchy (vibrant green primary actions, orange secondary actions, and high-legibility typography).
 - **Collapsible Navigation Drawer:** Fast switching between full label mode and an icon-only compact sidebar.
@@ -30,11 +30,12 @@
 | **🧮 Bill Scrapper** | Data Extraction | Scrapes and extracts billing metadata and consumer records directly into structured formats. |
 | **💰 Payment Extractor from 88L** | Data Extraction | Parses and extracts payment scrolls and disbursement figures from 88L report sheets. |
 | **📋 CP 52 Posting to PDF** | Reconciliation | Automated verification and audit reconciliation for CP-52 cash collection and posting registers into highlighted PDFs. |
-| **📝 CP136 & 137 Posting Checker** | Reconciliation | Parses WAPDA RCP-136 & CP-137 change posting reports (.txt and .pdf), extracts single postings, deletes duplicate findings, and exports multi-sheet structured Excel workbooks. |
+| **📝 CP 136 & 137 Posting Checker** | Reconciliation | Parses WAPDA RCP-136 & CP-137 change posting reports (.txt and .pdf), extracts single postings, deletes duplicate findings, and exports multi-sheet structured Excel workbooks. |
 | **📑 CP 139 Posting Checker** | Reconciliation | Parses WAPDA RCP-139 Unidentified Cash / Debtor's Adjustment posting reports (.txt and .pdf), extracts Ref#, S/Div, Grand Total, and posting status with error codes into styled Excel spreadsheets. |
 | **🧾 CP 22T Posting Checker** | Reconciliation | Verifies and validates CP22T revenue posting transactions against reference records. |
 | **⚡ CP21c Converter** | Data Extraction | Extracts CP-21C electricity meter reading data from PDF and exports it to a structured single-sheet Excel file. |
 | **🔁 Double CR Checker** | Reconciliation | Audits consumer ledger records to detect duplicate consumer references (CR) and redundant postings. |
+| **📊 Govt Assessment Realization** | Data Extraction | Parses WAPDA Assessment & Realization reports for Government Departments (.txt), extracts S/Div, 14-digit Ref#, Status, Name & Address, Tariff, Department Code, Arrear Age, OP. Balance, Payments Normal, Adjustor, Write Off, and Net Arrear into styled Excel spreadsheets. |
 | **📑 PDF Merger** | PDF Processing | Multi-folder merging (up to 5 folders simultaneously), natural numerical ordering, duplex/N-up blank-page padding, and filename header/footer stamping. |
 | **📂 File Checker** | Data Audit | Scans directories to identify missing serial numbers, sequence gaps, or malformed filenames in batch outputs. |
 | **📦 File Mover** | File Operations | Categorizes, sorts, and organizes batch generated files according to configurable pattern rules. |
@@ -58,6 +59,7 @@ PITC Suite
 │   ├── ui_helpers.py         # Stylesheet definitions, palettes & helper widgets
 │   ├── assets/               # Application icons and branding
 │   └── tools/                # Modular tool implementations
+│       ├── assessment_realization.py
 │       ├── bill_downloader.py
 │       ├── bill_scraper_logic.py
 │       ├── cp136_posting_checker.py

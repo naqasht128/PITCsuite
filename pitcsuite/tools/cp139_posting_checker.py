@@ -565,27 +565,6 @@ class CP139PostingCheckerPanel(QWidget):
         form_out.addLayout(filter_row)
         layout.addWidget(group_out)
 
-        # Summary Metric Cards Row
-        stats_frame = QHBoxLayout()
-        stats_frame.setSpacing(8)
-
-        self.card_files = self._create_stat_badge("Files Loaded", "0", "#3B82F6")
-        stats_frame.addWidget(self.card_files)
-
-        self.card_total = self._create_stat_badge("Total Records", "0", "#6366F1")
-        stats_frame.addWidget(self.card_total)
-
-        self.card_posted = self._create_stat_badge("Posted", "0", "#10B981")
-        stats_frame.addWidget(self.card_posted)
-
-        self.card_not_pos = self._create_stat_badge("Not Pos", "0", "#EF4444")
-        stats_frame.addWidget(self.card_not_pos)
-
-        self.card_amount = self._create_stat_badge("G. Total Sum", "Rs. 0", "#F59E0B")
-        stats_frame.addWidget(self.card_amount)
-
-        layout.addLayout(stats_frame)
-
         # Actions Row
         actions = QHBoxLayout()
         self.start_btn = QPushButton("▶  START PROCESSING")
@@ -622,26 +601,6 @@ class CP139PostingCheckerPanel(QWidget):
         self.log_box.setMinimumHeight(130)
         layout.addWidget(self.log_box)
 
-    def _create_stat_badge(self, title: str, initial_val: str, color_hex: str) -> QFrame:
-        frame = QFrame()
-        frame.setStyleSheet(
-            f"QFrame {{ background: #262b36; border: 1px solid #374151; border-radius: 6px; padding: 4px; }}"
-        )
-        box = QVBoxLayout(frame)
-        box.setContentsMargins(8, 4, 8, 4)
-        box.setSpacing(2)
-
-        t_lbl = QLabel(title)
-        t_lbl.setStyleSheet("color: #9ba8ba; font-size: 8pt; font-weight: 500;")
-        box.addWidget(t_lbl)
-
-        v_lbl = QLabel(initial_val)
-        v_lbl.setStyleSheet(f"color: {color_hex}; font-size: 11pt; font-weight: bold;")
-        box.addWidget(v_lbl)
-
-        frame.value_label = v_lbl
-        return frame
-
     def _on_dedup_toggled(self, checked: bool):
         self.dedup_mode.setEnabled(checked)
 
@@ -658,7 +617,6 @@ class CP139PostingCheckerPanel(QWidget):
                 self.file_paths.append(norm_p)
                 self.file_list.addItem(f"📄 {os.path.basename(norm_p)}  ({norm_p})")
         self._update_default_output()
-        self.card_files.value_label.setText(str(len(self.file_paths)))
 
     def _add_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder Containing CP-139 Files")
@@ -670,7 +628,6 @@ class CP139PostingCheckerPanel(QWidget):
                     self.file_paths.append(norm_p)
                     self.file_list.addItem(f"📄 {os.path.basename(norm_p)}  ({norm_p})")
             self._update_default_output()
-            self.card_files.value_label.setText(str(len(self.file_paths)))
 
     def _remove_selected(self):
         for item in self.file_list.selectedItems():
@@ -679,17 +636,11 @@ class CP139PostingCheckerPanel(QWidget):
             if row < len(self.file_paths):
                 del self.file_paths[row]
         self._update_default_output()
-        self.card_files.value_label.setText(str(len(self.file_paths)))
 
     def _clear_files(self):
         self.file_paths.clear()
         self.file_list.clear()
         self.out_ed.clear()
-        self.card_files.value_label.setText("0")
-        self.card_total.value_label.setText("0")
-        self.card_posted.value_label.setText("0")
-        self.card_not_pos.value_label.setText("0")
-        self.card_amount.value_label.setText("Rs. 0")
         self.open_excel_btn.setEnabled(False)
         self.open_folder_btn.setEnabled(False)
         self.status.setText("Status: Cleared all files.")
@@ -768,13 +719,7 @@ class CP139PostingCheckerPanel(QWidget):
         self.open_excel_btn.setEnabled(True)
         self.open_folder_btn.setEnabled(True)
 
-        # Update Stat Badges
-        self.card_total.value_label.setText(str(stats.get("total", 0)))
-        self.card_posted.value_label.setText(str(stats.get("posted", 0)))
-        self.card_not_pos.value_label.setText(str(stats.get("not_pos", 0)))
         amt = stats.get("total_amount", 0)
-        self.card_amount.value_label.setText(f"Rs. {amt:,.0f}")
-
         msg_body = (
             f"Processed {len(self.file_paths)} report file(s).\n\n"
             f"  • Total Records in Report: {stats.get('total', 0)}\n"
