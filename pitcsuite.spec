@@ -6,7 +6,7 @@ hidden_imports += collect_submodules('selenium')
 hidden_imports += collect_submodules('webdriver_manager')
 
 a = Analysis(
-    ['Pitcsuite.py'],
+    ['pitcsuite.py'],
     pathex=[],
     binaries=[],
     datas=[('pitcsuite\\assets', 'pitcsuite\\assets')],

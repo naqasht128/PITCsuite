@@ -1,194 +1,209 @@
-import os
-import sys
-import subprocess
+"""
+PITC Suite - Licensing, Hardware-Locking & Remote Verification Manager.
+Implements the TN Developers Universal Licensing Blueprint.
+"""
+
+from __future__ import annotations
+
+import configparser
+from datetime import datetime, timezone, timedelta
 import hashlib
-import winreg
-import uuid
+import json
+import os
 import re
-from typing import List, Tuple, Set
+import subprocess
+import sys
+from typing import List, Tuple, Set, Optional
+import urllib.parse
+import uuid
+import webbrowser
+import winreg
 
+import requests
+from PySide6.QtCore import Qt, QThread, Signal, QUrl
+from PySide6.QtGui import QFont, QCursor, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QMessageBox, QApplication
+    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+    QLineEdit, QPushButton, QMessageBox, QTabWidget, QWidget,
+    QFrame, QGridLayout, QScrollArea
 )
-from PySide6.QtCore import Qt
 
-SECRET_SALT = "PITCSUITE_TAHIR_2026_PRO"
+# ====================================================================
+# CONFIGURATION & CONSTANTS
+# ====================================================================
+
+DEFAULT_LICENSE_API_URL = "https://pitcsuite.vercel.app"
+APP_NAME = "PITCSuite"
+SUPPORT_WHATSAPP = "923339962474"
+SUPPORT_EMAIL = "tahir.naqash4@gmail.com"
+
+# VS Code Dark+ Color Palette
+COLOR_BG_DARK = "#1e1e1e"
+COLOR_CARD_BG = "#252526"
+COLOR_INPUT_BG = "#2d2d2d"
+COLOR_BORDER = "#3c3c3c"
+COLOR_TEXT_PRIMARY = "#ffffff"
+COLOR_TEXT_SECONDARY = "#cccccc"
+COLOR_TEXT_MUTED = "#858585"
+COLOR_ACCENT_BLUE = "#007acc"
+COLOR_ACCENT_BLUE_HOVER = "#1c8cd8"
+COLOR_ACCENT_GREEN = "#238636"
+COLOR_ACCENT_GREEN_HOVER = "#2ea043"
+COLOR_ERROR = "#f87171"
+COLOR_WARNING = "#fbbf24"
 
 
-def get_hardware_id() -> str:
+def get_api_base_url() -> str:
+    """Resolves license API base URL from environment or local config.ini."""
+    env_url = os.environ.get("LICENSE_API_URL", "").strip()
+    if env_url:
+        return env_url.rstrip("/")
+
+    # Check local config.ini if available
+    try:
+        from pitcsuite.config import config_path
+        cfg_file = config_path()
+        if os.path.exists(cfg_file):
+            cfg = configparser.ConfigParser()
+            cfg.read(cfg_file, encoding="utf-8")
+            if cfg.has_option("License", "api_url"):
+                val = cfg.get("License", "api_url").strip()
+                if val:
+                    return val.rstrip("/")
+    except Exception:
+        pass
+
+    return DEFAULT_LICENSE_API_URL.rstrip("/")
+
+
+# ====================================================================
+# HARDWARE ID GENERATION (Windows 11 24H2+ Safe)
+# ====================================================================
+
+def get_device_id() -> str:
     """
-    Returns the primary hardware ID to display to the user.
-    Uses Windows Registry MachineGuid as primary, falling back to CIM/WMIC UUID,
-    MAC address hash, or legacy fallback.
+    Returns persistent, unique hardware UUID.
+    Guaranteed never to crash on Windows 11 (24H2+) even when WMIC is missing or deprecated.
     """
-    # 1. Windows Registry MachineGuid (64-bit & 32-bit views)
-    for flag in [getattr(winreg, 'KEY_WOW64_64KEY', 0), getattr(winreg, 'KEY_WOW64_32KEY', 0), 0]:
+    if sys.platform == "win32":
+        # 1. Windows Registry MachineGuid (64-bit and 32-bit views)
+        for flag in [getattr(winreg, 'KEY_WOW64_64KEY', 0), getattr(winreg, 'KEY_WOW64_32KEY', 0), 0]:
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography", 0, winreg.KEY_READ | flag) as key:
+                    val, _ = winreg.QueryValueEx(key, "MachineGuid")
+                    if val and len(str(val).strip()) > 10:
+                        return str(val).strip().upper()
+            except Exception:
+                pass
+
+        # 2. Modern PowerShell CIM query (Zero console flashing)
         try:
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography", 0, winreg.KEY_READ | flag) as key:
-                machine_guid, _ = winreg.QueryValueEx(key, "MachineGuid")
-                if machine_guid and len(machine_guid.strip()) > 10:
-                    return machine_guid.strip().upper()
+            cmd = ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_ComputerSystemProduct).UUID"]
+            flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+            out = subprocess.check_output(cmd, creationflags=flags, timeout=5).decode(errors="ignore").strip()
+            if '-' in out and len(out) >= 30:
+                return out.upper()
         except Exception:
             pass
 
-    # 2. Modern PowerShell CIM query for BIOS UUID
-    try:
-        cmd = ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_ComputerSystemProduct).UUID"]
-        creation_flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-        output = subprocess.check_output(cmd, creationflags=creation_flags, timeout=5).decode().strip()
-        if '-' in output and len(output) >= 30:
-            return output.upper()
-    except Exception:
-        pass
+        # 3. MAC address fallback
+        try:
+            mac = uuid.getnode()
+            return f"MAC-{hex(mac)[2:].upper()}"
+        except Exception:
+            pass
 
-    # 3. Legacy WMIC UUID
-    try:
-        cmd = "wmic csproduct get uuid"
-        output = subprocess.check_output(cmd, shell=True, timeout=5).decode().split('\n')
-        for line in output:
-            if '-' in line and len(line.strip()) >= 30:
-                return line.strip().upper()
-    except Exception:
-        pass
+        return "UNKNOWN-HWID-WIN"
 
-    # 4. Fallback to physical MAC address hash
+    # macOS / Linux fallback
     try:
         mac = uuid.getnode()
         return f"FALLBACK-{hex(mac)[2:].upper()}"
     except Exception:
-        pass
-
-    return "UNKNOWN-HWID-001"
+        return "UNKNOWN-DEVICE-ID"
 
 
-def get_all_machine_hwids() -> List[str]:
+def get_candidate_device_ids() -> List[str]:
     """
-    Gathers all legitimate hardware IDs that can identify this specific machine.
-    This guarantees full backward and forward compatibility across updates,
-    preventing existing activated clients from being locked out.
+    Returns all legitimate hardware IDs that can identify this specific machine.
+    Prevents existing activated clients from being locked out across hardware query variations.
     """
-    hwids: Set[str] = set()
+    primary = get_device_id()
+    candidates: Set[str] = {primary, primary.upper(), primary.lower()}
 
-    # 1. Windows Registry MachineGuid (both 64-bit and 32-bit registry views)
-    for flag in [getattr(winreg, 'KEY_WOW64_64KEY', 0), getattr(winreg, 'KEY_WOW64_32KEY', 0), 0]:
+    if sys.platform == "win32":
+        # Check all registry views
+        for flag in [getattr(winreg, 'KEY_WOW64_64KEY', 0), getattr(winreg, 'KEY_WOW64_32KEY', 0), 0]:
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography", 0, winreg.KEY_READ | flag) as key:
+                    val, _ = winreg.QueryValueEx(key, "MachineGuid")
+                    if val and len(str(val).strip()) > 10:
+                        c = str(val).strip()
+                        candidates.add(c)
+                        candidates.add(c.upper())
+            except Exception:
+                pass
+
+        # PowerShell CIM BIOS UUID
         try:
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography", 0, winreg.KEY_READ | flag) as key:
-                val, _ = winreg.QueryValueEx(key, "MachineGuid")
-                if val and len(val.strip()) > 10:
-                    clean = val.strip()
-                    hwids.add(clean)
-                    hwids.add(clean.upper())
-                    hwids.add(clean.lower())
+            cmd = ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_ComputerSystemProduct).UUID"]
+            flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+            out = subprocess.check_output(cmd, creationflags=flags, timeout=5).decode(errors="ignore").strip()
+            if '-' in out and len(out) >= 30:
+                candidates.add(out.upper())
+                candidates.add(out.lower())
         except Exception:
             pass
 
-    # 2. PowerShell CIM query (BIOS UUID from Win32_ComputerSystemProduct)
-    try:
-        cmd = ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_ComputerSystemProduct).UUID"]
-        creation_flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-        out = subprocess.check_output(cmd, creationflags=creation_flags, timeout=5).decode().strip()
-        if '-' in out and len(out) >= 30:
-            clean = out.strip()
-            hwids.add(clean)
-            hwids.add(clean.upper())
-            hwids.add(clean.lower())
-    except Exception:
-        pass
+        # Physical MAC fallback
+        try:
+            mac = uuid.getnode()
+            candidates.add(f"MAC-{hex(mac)[2:].upper()}")
+            candidates.add(f"FALLBACK-{hex(mac)[2:].upper()}")
+        except Exception:
+            pass
 
-    # 3. Legacy WMIC query (BIOS UUID from wmic csproduct)
-    try:
-        cmd = "wmic csproduct get uuid"
-        lines = subprocess.check_output(cmd, shell=True, timeout=5).decode().split('\n')
-        for line in lines:
-            if '-' in line and len(line.strip()) >= 30:
-                clean = line.strip()
-                hwids.add(clean)
-                hwids.add(clean.upper())
-                hwids.add(clean.lower())
-    except Exception:
-        pass
-
-    # 4. Physical MAC address fallback
-    try:
-        mac = uuid.getnode()
-        hwids.add(f"FALLBACK-{hex(mac)[2:].upper()}")
-        hwids.add(f"FALLBACK-{hex(mac)[2:].lower()}")
-    except Exception:
-        pass
-
-    # 5. Grandfathered legacy fallback identifier
-    hwids.add("UNKNOWN-HWID-001")
-
-    return [h for h in hwids if h]
-
-
-def generate_expected_key(hwid: str) -> str:
-    """Generates a 16-character machine-locked serial key formatted as XXXX-XXXX-XXXX-XXXX."""
-    if not hwid:
-        return ""
-    raw = (hwid.strip() + SECRET_SALT).encode('utf-8')
-    full_hash = hashlib.sha256(raw).hexdigest().upper()
-    return f"{full_hash[:4]}-{full_hash[4:8]}-{full_hash[8:12]}-{full_hash[12:16]}"
+    return [c for c in candidates if c]
 
 
 def normalize_key(key: str) -> str:
-    """Removes hyphens, spaces, and normalizes to uppercase 16 hex characters."""
+    """Removes hyphens, spaces, and normalizes to uppercase characters."""
     if not key:
         return ""
-    return re.sub(r'[^A-Fa-f0-9]', '', key).upper()
+    return re.sub(r'[^A-Za-z0-9]', '', key).upper()
 
 
-def is_key_valid_for_machine(candidate_key: str) -> Tuple[bool, str, str]:
-    """
-    Checks if a candidate serial key is valid for this machine under ANY of its valid HWIDs.
-    Returns: (is_valid, matched_hwid, expected_formatted_key)
-    """
-    norm_candidate = normalize_key(candidate_key)
-    if len(norm_candidate) != 16:
-        return False, "", ""
+# ====================================================================
+# STORAGE TIERS (JSON & Multi-Location Redundancy)
+# ====================================================================
 
-    for hwid in get_all_machine_hwids():
-        expected = generate_expected_key(hwid)
-        if normalize_key(expected) == norm_candidate:
-            return True, hwid, expected
-
-    return False, "", ""
+def get_primary_license_json_path() -> str:
+    """Returns primary license.json path in %APPDATA%/PITCSuite."""
+    base = os.getenv("APPDATA") or os.path.expanduser(r"~\AppData\Roaming")
+    folder = os.path.join(base, APP_NAME)
+    os.makedirs(folder, exist_ok=True)
+    return os.path.join(folder, "license.json")
 
 
-def get_license_search_paths() -> List[str]:
-    """Returns all redundant persistent storage paths for the license key."""
+def get_all_storage_paths() -> List[str]:
+    """Returns all redundant persistent storage paths for the license."""
     paths = []
-
-    # 1. Roaming AppData (User profile)
-    appdata = os.getenv('APPDATA') or os.path.expanduser(r'~\AppData\Roaming')
+    # 1. Roaming AppData
+    appdata = os.getenv("APPDATA") or os.path.expanduser(r"~\AppData\Roaming")
     if appdata:
-        paths.append(os.path.join(appdata, 'PITCSuite', 'license.key'))
+        paths.append(os.path.join(appdata, APP_NAME, "license.json"))
+        paths.append(os.path.join(appdata, APP_NAME, "license.key"))
 
-    # 2. Local AppData (Installation & local caches)
-    localappdata = os.getenv('LOCALAPPDATA') or os.path.expanduser(r'~\AppData\Local')
+    # 2. Local AppData
+    localappdata = os.getenv("LOCALAPPDATA") or os.path.expanduser(r"~\AppData\Local")
     if localappdata:
-        paths.append(os.path.join(localappdata, 'PITCSuite', 'license.key'))
-        paths.append(os.path.join(localappdata, 'Programs', 'PITCSuite', 'license.key'))
+        paths.append(os.path.join(localappdata, APP_NAME, "license.json"))
+        paths.append(os.path.join(localappdata, "Programs", APP_NAME, "license.json"))
 
-    # 3. Machine-wide ProgramData (Shared by all users & elevated installer/updater runs)
-    programdata = os.getenv('PROGRAMDATA') or os.getenv('ALLUSERSPROFILE') or r'C:\ProgramData'
+    # 3. Machine-wide ProgramData
+    programdata = os.getenv("PROGRAMDATA") or os.getenv("ALLUSERSPROFILE") or r"C:\ProgramData"
     if programdata:
-        paths.append(os.path.join(programdata, 'PITCSuite', 'license.key'))
-
-    # 4. User profile home directory
-    userprofile = os.getenv('USERPROFILE') or os.path.expanduser('~')
-    if userprofile:
-        paths.append(os.path.join(userprofile, '.pitcsuite', 'license.key'))
-
-    # 5. Application directory (if portable / writable)
-    try:
-        if getattr(sys, 'frozen', False):
-            app_dir = os.path.dirname(sys.executable)
-        else:
-            app_dir = os.path.dirname(os.path.abspath(__file__))
-        paths.append(os.path.join(app_dir, 'license.key'))
-    except Exception:
-        pass
+        paths.append(os.path.join(programdata, APP_NAME, "license.json"))
 
     seen = set()
     deduped = []
@@ -200,287 +215,618 @@ def get_license_search_paths() -> List[str]:
     return deduped
 
 
-def get_license_file_path() -> str:
-    """Primary license file path for backward compatibility."""
-    appdata = os.getenv('APPDATA') or os.path.expanduser(r'~\AppData\Roaming')
-    folder = os.path.join(appdata, 'PITCSuite')
-    os.makedirs(folder, exist_ok=True)
-    return os.path.join(folder, 'license.key')
-
-
-def load_saved_license_keys() -> List[str]:
-    """Retrieves all candidate license keys stored across persistent file locations and Windows Registry."""
-    found_keys: List[str] = []
-
-    # 1. Search persistent file paths
-    for path in get_license_search_paths():
-        if os.path.exists(path):
+def load_local_license() -> dict:
+    """Reads license metadata from local storage (%APPDATA%/PITCSuite/license.json)."""
+    for path in get_all_storage_paths():
+        if path.endswith(".json") and os.path.isfile(path):
             try:
-                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                    for line in f:
-                        # Extract any XXXX-XXXX-XXXX-XXXX
-                        match = re.search(r'[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}', line)
-                        if match:
-                            found_keys.append(match.group(0).upper())
-                        else:
-                            clean_line = normalize_key(line.strip())
-                            if len(clean_line) == 16:
-                                formatted = f"{clean_line[:4]}-{clean_line[4:8]}-{clean_line[8:12]}-{clean_line[12:16]}"
-                                found_keys.append(formatted)
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict) and data.get("serial_key"):
+                        return data
             except Exception:
                 pass
 
-    # 2. Search HKCU Registry
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\PITCSuite", 0, winreg.KEY_READ) as k:
-            val, _ = winreg.QueryValueEx(k, "LicenseKey")
-            if val:
-                match = re.search(r'[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}', str(val))
-                if match:
-                    found_keys.append(match.group(0).upper())
-    except Exception:
-        pass
-
-    # 3. Search HKLM Registry (64-bit and 32-bit views)
-    for flag in [getattr(winreg, 'KEY_WOW64_64KEY', 0), getattr(winreg, 'KEY_WOW64_32KEY', 0), 0]:
-        try:
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"Software\PITCSuite", 0, winreg.KEY_READ | flag) as k:
-                val, _ = winreg.QueryValueEx(k, "LicenseKey")
-                if val:
-                    match = re.search(r'[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}', str(val))
-                    if match:
-                        found_keys.append(match.group(0).upper())
-        except Exception:
-            pass
-
-    seen = set()
-    deduped = []
-    for k in found_keys:
-        if k not in seen:
-            seen.add(k)
-            deduped.append(k)
-    return deduped
+    return {}
 
 
-def save_license_key(keys_to_save) -> None:
-    """Saves valid license key(s) to all persistent user, system files, and Windows Registry."""
-    if isinstance(keys_to_save, str):
-        keys_list = [keys_to_save]
-    else:
-        keys_list = list(keys_to_save)
-
-    clean_keys: List[str] = []
-    for k in keys_list:
-        if not k:
-            continue
-        norm = normalize_key(k)
-        if len(norm) == 16:
-            formatted = f"{norm[:4]}-{norm[4:8]}-{norm[8:12]}-{norm[12:16]}"
-            if formatted not in clean_keys:
-                clean_keys.append(formatted)
-
-    if not clean_keys:
+def save_local_license(data: dict) -> None:
+    """Persists license metadata across JSON files and Windows Registry."""
+    if not isinstance(data, dict) or not data.get("serial_key"):
         return
 
-    file_content = "\n".join(clean_keys) + "\n"
+    content = json.dumps(data, indent=2, ensure_ascii=False)
+    for path in get_all_storage_paths():
+        if path.endswith(".json"):
+            try:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(content)
+            except Exception:
+                pass
 
-    # 1. Write to all persistent file paths
-    for path in get_license_search_paths():
+    # Write key to Registry HKCU
+    if sys.platform == "win32":
         try:
-            folder = os.path.dirname(path)
-            os.makedirs(folder, exist_ok=True)
-            with open(path, 'w', encoding='utf-8') as f:
-                f.write(file_content)
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"Software\{APP_NAME}") as k:
+                winreg.SetValueEx(k, "LicenseKey", 0, winreg.REG_SZ, data["serial_key"])
         except Exception:
             pass
 
-    # 2. Write to HKCU Registry
+
+# ====================================================================
+# REMOTE API CLIENT
+# ====================================================================
+
+def verify_license_remote(serial_key: str, device_id: str, candidate_ids: Optional[List[str]] = None) -> dict:
+    """Sends verification request to Vercel API."""
+    api_url = get_api_base_url()
+    url = f"{api_url}/api/verify"
+    payload = {
+        "serial_key": serial_key.strip().upper(),
+        "device_id": device_id.strip(),
+        "candidate_ids": candidate_ids or [device_id.strip()],
+        "os_info": f"Windows {sys.getwindowsversion().major}.{sys.getwindowsversion().minor}" if sys.platform == "win32" else sys.platform
+    }
     try:
-        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\PITCSuite") as k:
-            winreg.SetValueEx(k, "LicenseKey", 0, winreg.REG_SZ, clean_keys[0])
-    except Exception:
-        pass
+        resp = requests.post(url, json=payload, timeout=8)
+        try:
+            return resp.json()
+        except Exception:
+            return {"valid": False, "status": "server_error", "message": f"Server returned status {resp.status_code}"}
+    except requests.exceptions.Timeout:
+        return {"valid": False, "status": "network_error", "message": "Connection to license server timed out."}
+    except Exception as exc:
+        return {"valid": False, "status": "network_error", "message": str(exc)}
 
-    # 3. Write to HKLM Registry (if administrator privileges permit)
+
+def activate_license_remote(serial_key: str, device_id: str, candidate_ids: Optional[List[str]] = None) -> dict:
+    """Sends activation request to Vercel API."""
+    api_url = get_api_base_url()
+    url = f"{api_url}/api/activate"
+    payload = {
+        "serial_key": serial_key.strip().upper(),
+        "device_id": device_id.strip(),
+        "candidate_ids": candidate_ids or [device_id.strip()],
+        "os_info": f"Windows {sys.getwindowsversion().major}.{sys.getwindowsversion().minor}" if sys.platform == "win32" else sys.platform
+    }
     try:
-        with winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r"Software\PITCSuite") as k:
-            winreg.SetValueEx(k, "LicenseKey", 0, winreg.REG_SZ, clean_keys[0])
-    except Exception:
-        pass
+        resp = requests.post(url, json=payload, timeout=10)
+        try:
+            return resp.json()
+        except Exception:
+            return {"valid": False, "status": "server_error", "message": f"Server returned status {resp.status_code}"}
+    except requests.exceptions.Timeout:
+        return {"valid": False, "status": "network_error", "message": "Connection to license server timed out."}
+    except Exception as exc:
+        return {"valid": False, "status": "network_error", "message": str(exc)}
 
 
-class LicenseDialog(QDialog):
-    def __init__(self, hwid: str, parent=None):
+def is_offline_grace_valid(local_lic: dict) -> Tuple[bool, str]:
+    """
+    Checks if an existing local license is within the offline grace period.
+    Allows up to 7 days of offline usage from the last successful remote verification.
+    """
+    if not local_lic or not local_lic.get("valid"):
+        return False, "No valid cached license found."
+
+    expires_at_str = local_lic.get("expires_at")
+    if expires_at_str:
+        try:
+            exp_dt = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) > exp_dt:
+                return False, "Subscription has expired."
+        except Exception:
+            pass
+
+    last_verified_str = local_lic.get("last_verified")
+    if last_verified_str:
+        try:
+            lv_dt = datetime.fromisoformat(last_verified_str.replace("Z", "+00:00"))
+            grace_period = timedelta(days=7)
+            if datetime.now(timezone.utc) - lv_dt <= grace_period:
+                return True, "Valid under 7-day offline grace period."
+        except Exception:
+            pass
+
+    # If last_verified is missing but valid=True was saved recently
+    return True, "Valid under offline grace period."
+
+
+# ====================================================================
+# BACKGROUND ACTIVATION WORKER THREAD
+# ====================================================================
+
+class ActivationWorker(QThread):
+    finished_signal = Signal(dict)
+
+    def __init__(self, serial_key: str, device_id: str, candidate_ids: List[str]):
+        super().__init__()
+        self.serial_key = serial_key
+        self.device_id = device_id
+        self.candidate_ids = candidate_ids
+
+    def run(self):
+        # Call remote activation API (all licenses must be verified with Supabase)
+        res = activate_license_remote(self.serial_key, self.device_id, self.candidate_ids)
+        self.finished_signal.emit(res)
+
+
+# ====================================================================
+# MODERN VS CODE DARK+ LICENSE GATE DIALOG (PySide6)
+# ====================================================================
+
+class LicenseGateDialog(QDialog):
+    """
+    Modern VS Code Dark+ styled product activation dialog.
+    Tab 1: Serial Key activation with Hardware ID and one-click copy.
+    Tab 2: Subscription plans with WhatsApp and Email quick-order links.
+    """
+
+    def __init__(self, initial_error: str = "", parent=None):
         super().__init__(parent)
-        self.setWindowTitle("PITC Suite - Product Activation")
-        self.setFixedSize(460, 280)
-        self.setWindowFlags(Qt.Dialog | Qt.CustomizeWindowHint | Qt.WindowTitleHint)  # No close button
+        self.device_id = get_device_id()
+        self.candidate_ids = get_candidate_device_ids()
+        self.activated = False
+        self.license_info: Optional[dict] = None
+        self._worker: Optional[ActivationWorker] = None
 
-        self.setStyleSheet("""
-            QDialog {
-                background: #1e222a;
-                color: #edf0f5;
-                font-family: 'Segoe UI', Tahoma, sans-serif;
-            }
-            QLabel {
-                color: #cbd5e1;
-            }
-        """)
+        self.setWindowTitle("PITC Suite — Product Activation & Licensing")
+        self.setFixedSize(560, 480)
+        self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
+        self.setAttribute(Qt.WA_DeleteOnClose, False)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 18, 20, 18)
-        layout.setSpacing(10)
+        self._apply_styles()
+        self._build_ui(initial_error)
 
-        lbl1 = QLabel("This software requires a serial key to run.")
-        lbl1.setStyleSheet("font-weight: bold; font-size: 11pt; color: #f8fafc;")
-        layout.addWidget(lbl1)
-
-        lbl2 = QLabel("Please send the following Hardware ID to tahir.naqash4@gmail.com or contact +923339962474:")
-        lbl2.setWordWrap(True)
-        lbl2.setStyleSheet("font-size: 9pt; color: #94a3b8;")
-        layout.addWidget(lbl2)
-
-        # HWID row with Copy button
-        hwid_row = QHBoxLayout()
-        hwid_row.setSpacing(8)
-
-        self.hwid_input = QLineEdit(hwid)
-        self.hwid_input.setReadOnly(True)
-        self.hwid_input.setStyleSheet("""
-            QLineEdit {
-                background: #0f172a;
-                color: #38bdf8;
+    def _apply_styles(self):
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {COLOR_BG_DARK};
+                color: {COLOR_TEXT_PRIMARY};
+                font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+            }}
+            QTabWidget::pane {{
+                border: 1px solid {COLOR_BORDER};
+                background: {COLOR_CARD_BG};
+                border-radius: 6px;
+                top: -1px;
+            }}
+            QTabBar::tab {{
+                background: {COLOR_BG_DARK};
+                color: {COLOR_TEXT_MUTED};
+                font-size: 10pt;
                 font-weight: bold;
-                font-size: 11pt;
-                padding: 6px 10px;
-                border: 1px solid #334155;
+                padding: 8px 20px;
+                border: 1px solid {COLOR_BORDER};
+                border-bottom: none;
+                border-top-left-radius: 5px;
+                border-top-right-radius: 5px;
+                margin-right: 4px;
+            }}
+            QTabBar::tab:selected {{
+                background: {COLOR_CARD_BG};
+                color: {COLOR_TEXT_PRIMARY};
+                border-bottom: 2px solid {COLOR_ACCENT_BLUE};
+            }}
+            QTabBar::tab:hover:!selected {{
+                background: #2a2d2e;
+                color: {COLOR_TEXT_SECONDARY};
+            }}
+            QLabel {{
+                color: {COLOR_TEXT_SECONDARY};
+                font-size: 9.5pt;
+            }}
+            QLineEdit {{
+                background-color: {COLOR_INPUT_BG};
+                color: {COLOR_TEXT_PRIMARY};
+                border: 1px solid {COLOR_BORDER};
                 border-radius: 5px;
-            }
+                padding: 7px 10px;
+                font-size: 10pt;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {COLOR_ACCENT_BLUE};
+            }}
         """)
-        self.hwid_input.setAlignment(Qt.AlignCenter)
-        hwid_row.addWidget(self.hwid_input, 1)
 
-        self.copy_btn = QPushButton("📋 Copy")
-        self.copy_btn.setCursor(Qt.PointingHandCursor)
-        self.copy_btn.setStyleSheet("""
-            QPushButton {
+    def _build_ui(self, initial_error: str):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 18, 20, 18)
+        main_layout.setSpacing(14)
+
+        # Header Title Row
+        header_row = QHBoxLayout()
+        header_row.setSpacing(10)
+        title_vbox = QVBoxLayout()
+        title_vbox.setSpacing(2)
+
+        lbl_title = QLabel("PITC Suite Activation Gate")
+        lbl_title.setStyleSheet(f"font-size: 13pt; font-weight: bold; color: {COLOR_TEXT_PRIMARY};")
+        title_vbox.addWidget(lbl_title)
+
+        lbl_subtitle = QLabel("Hardware-Locked Licensing & Automatic Updates")
+        lbl_subtitle.setStyleSheet(f"font-size: 8.5pt; color: {COLOR_TEXT_MUTED};")
+        title_vbox.addWidget(lbl_subtitle)
+        header_row.addLayout(title_vbox)
+        header_row.addStretch()
+
+        badge = QLabel("TN Developers")
+        badge.setStyleSheet(f"background: #1e3a5f; color: #60a5fa; font-weight: bold; font-size: 8pt; padding: 4px 10px; border-radius: 4px;")
+        header_row.addWidget(badge)
+        main_layout.addLayout(header_row)
+
+        # Tab Widget
+        tabs = QTabWidget(self)
+        tabs.addTab(self._build_activation_tab(initial_error), "🔑 Product Activation")
+        tabs.addTab(self._build_plans_tab(), "💎 Subscription Plans")
+        main_layout.addWidget(tabs, 1)
+
+    def _build_activation_tab(self, initial_error: str) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(12)
+
+        # 1. Hardware ID Section
+        hw_lbl = QLabel("Your Unique Machine Hardware ID (HWID):")
+        hw_lbl.setStyleSheet(f"font-weight: bold; color: {COLOR_TEXT_PRIMARY};")
+        layout.addWidget(hw_lbl)
+
+        hw_row = QHBoxLayout()
+        hw_row.setSpacing(8)
+
+        self.hw_entry = QLineEdit(self.device_id)
+        self.hw_entry.setReadOnly(True)
+        self.hw_entry.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: #171717;
+                color: #38bdf8;
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-weight: bold;
+                font-size: 10pt;
+                padding: 7px 10px;
+                border: 1px solid #334155;
+            }}
+        """)
+        hw_row.addWidget(self.hw_entry, 1)
+
+        self.btn_copy = QPushButton("📋 Copy ID")
+        self.btn_copy.setCursor(Qt.PointingHandCursor)
+        self.btn_copy.setStyleSheet(f"""
+            QPushButton {{
                 background: #334155;
                 color: #f1f5f9;
                 font-weight: bold;
                 font-size: 9pt;
-                padding: 6px 14px;
+                padding: 7px 14px;
                 border: none;
                 border-radius: 5px;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 background: #475569;
-            }
+            }}
         """)
-        self.copy_btn.clicked.connect(self.copy_hwid)
-        hwid_row.addWidget(self.copy_btn)
+        self.btn_copy.clicked.connect(self._on_copy_hwid)
+        hw_row.addWidget(self.btn_copy)
+        layout.addLayout(hw_row)
 
-        layout.addLayout(hwid_row)
+        layout.addSpacing(4)
 
-        lbl3 = QLabel("Enter your Serial Key:")
-        lbl3.setStyleSheet("font-size: 9.5pt; font-weight: bold; color: #e2e8f0; margin-top: 4px;")
-        layout.addWidget(lbl3)
+        # 2. Serial Key Section
+        key_lbl = QLabel("Enter Your Serial Key:")
+        key_lbl.setStyleSheet(f"font-weight: bold; color: {COLOR_TEXT_PRIMARY};")
+        layout.addWidget(key_lbl)
 
-        self.key_input = QLineEdit()
-        self.key_input.setPlaceholderText("XXXX-XXXX-XXXX-XXXX")
-        self.key_input.setStyleSheet("""
-            QLineEdit {
-                background: #0f172a;
+        self.key_entry = QLineEdit()
+        self.key_entry.setPlaceholderText("PS-XXXX-XXXX-XXXX")
+        self.key_entry.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: #171717;
                 color: #4ade80;
+                font-family: 'Consolas', 'Courier New', monospace;
                 font-weight: bold;
-                font-size: 12pt;
-                padding: 6px;
+                font-size: 11pt;
+                letter-spacing: 1px;
+                padding: 8px 10px;
                 border: 1px solid #334155;
-                border-radius: 5px;
-            }
+            }}
         """)
-        self.key_input.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.key_input)
+        self.key_entry.textChanged.connect(self._format_serial_input)
+        self.key_entry.returnPressed.connect(self._on_activate_clicked)
+        layout.addWidget(self.key_entry)
 
-        self.activate_btn = QPushButton("Activate Software")
-        self.activate_btn.setCursor(Qt.PointingHandCursor)
-        self.activate_btn.setStyleSheet("""
-            QPushButton {
-                background: #16a34a;
+        # 3. Status Message Label
+        self.status_lbl = QLabel(initial_error if initial_error else "")
+        self.status_lbl.setWordWrap(True)
+        if initial_error:
+            self.status_lbl.setStyleSheet(f"color: {COLOR_ERROR}; font-size: 8.5pt;")
+        else:
+            self.status_lbl.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: 8.5pt;")
+        layout.addWidget(self.status_lbl)
+
+        layout.addStretch()
+
+        # 4. Activate Button
+        self.btn_activate = QPushButton("Activate PITC Suite")
+        self.btn_activate.setCursor(Qt.PointingHandCursor)
+        self.btn_activate.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {COLOR_ACCENT_GREEN};
                 color: white;
                 font-weight: bold;
-                font-size: 10pt;
-                padding: 9px;
+                font-size: 10.5pt;
+                padding: 10px;
                 border: none;
                 border-radius: 6px;
-                margin-top: 4px;
+            }}
+            QPushButton:hover {{
+                background-color: {COLOR_ACCENT_GREEN_HOVER};
+            }}
+            QPushButton:disabled {{
+                background-color: #334155;
+                color: #94a3b8;
+            }}
+        """)
+        self.btn_activate.clicked.connect(self._on_activate_clicked)
+        layout.addWidget(self.btn_activate)
+
+        return widget
+
+    def _build_plans_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+
+        info_lbl = QLabel("Choose a subscription plan to activate or renew PITC Suite:")
+        info_lbl.setStyleSheet(f"font-size: 9pt; color: {COLOR_TEXT_SECONDARY};")
+        layout.addWidget(info_lbl)
+
+        # Plans Grid
+        grid = QGridLayout()
+        grid.setSpacing(8)
+
+        plans_data = [
+            ("1 Month Plan", "Rs. 600", "30 Days Validity", "1 Device Limit"),
+            ("3 Months Plan", "Rs. 1,400", "90 Days Validity", "Up to 2 Devices"),
+            ("6 Months Plan", "Rs. 2,400", "180 Days Validity", "Up to 2 Devices"),
+            ("1 Year Plan", "Rs. 4,000", "365 Days Validity", "Up to 3 Devices"),
+        ]
+
+        for i, (title, price, dur, dev) in enumerate(plans_data):
+            row = i // 2
+            col = i % 2
+            card = QFrame()
+            card.setStyleSheet(f"""
+                QFrame {{
+                    background: #1e222a;
+                    border: 1px solid #334155;
+                    border-radius: 6px;
+                    padding: 6px;
+                }}
+            """)
+            c_layout = QVBoxLayout(card)
+            c_layout.setContentsMargins(10, 8, 10, 8)
+            c_layout.setSpacing(2)
+
+            t_lbl = QLabel(title)
+            t_lbl.setStyleSheet("font-weight: bold; color: #f8fafc; font-size: 9.5pt;")
+            c_layout.addWidget(t_lbl)
+
+            p_lbl = QLabel(price)
+            p_lbl.setStyleSheet("font-weight: bold; color: #4ade80; font-size: 12pt;")
+            c_layout.addWidget(p_lbl)
+
+            d_lbl = QLabel(f"• {dur}\n• {dev}")
+            d_lbl.setStyleSheet("color: #94a3b8; font-size: 8pt;")
+            c_layout.addWidget(d_lbl)
+
+            grid.addWidget(card, row, col)
+
+        layout.addLayout(grid)
+        layout.addSpacing(4)
+
+        # Quick Order Action Buttons
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
+
+        btn_wa = QPushButton("💬 Order via WhatsApp")
+        btn_wa.setCursor(Qt.PointingHandCursor)
+        btn_wa.setStyleSheet("""
+            QPushButton {
+                background: #059669;
+                color: white;
+                font-weight: bold;
+                font-size: 9pt;
+                padding: 9px;
+                border: none;
+                border-radius: 5px;
             }
             QPushButton:hover {
-                background: #15803d;
+                background: #047857;
             }
         """)
-        self.activate_btn.clicked.connect(self.check_activation)
-        layout.addWidget(self.activate_btn)
+        btn_wa.clicked.connect(self._open_whatsapp)
+        btn_row.addWidget(btn_wa)
 
-        self.hwid = hwid
+        btn_email = QPushButton("✉ Contact via Email")
+        btn_email.setCursor(Qt.PointingHandCursor)
+        btn_email.setStyleSheet("""
+            QPushButton {
+                background: #2563eb;
+                color: white;
+                font-weight: bold;
+                font-size: 9pt;
+                padding: 9px;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background: #1d4ed8;
+            }
+        """)
+        btn_email.clicked.connect(self._open_email)
+        btn_row.addWidget(btn_email)
 
-    def copy_hwid(self):
-        clipboard = QApplication.clipboard()
-        if clipboard:
-            clipboard.setText(self.hwid)
-            self.copy_btn.setText("✓ Copied")
-            self.copy_btn.setStyleSheet("""
+        layout.addLayout(btn_row)
+
+        return widget
+
+    def _format_serial_input(self, text: str):
+        """Auto uppercase and assist in serial key formatting."""
+        clean = re.sub(r'[^A-Za-z0-9]', '', text).upper()
+        # If user pasted raw 12-16 chars without dashes, format it
+        if clean.startswith("PS") and len(clean) > 2 and "-" not in text:
+            chunks = [clean[:2]]
+            remainder = clean[2:]
+            for i in range(0, len(remainder), 4):
+                chunks.append(remainder[i:i+4])
+            formatted = "-".join(chunks[:4])
+            if formatted != text:
+                self.key_entry.blockSignals(True)
+                self.key_entry.setText(formatted)
+                self.key_entry.setCursorPosition(len(formatted))
+                self.key_entry.blockSignals(False)
+
+    def _on_copy_hwid(self):
+        cb = QApplication.clipboard()
+        if cb:
+            cb.setText(self.device_id)
+            self.btn_copy.setText("✓ Copied")
+            self.btn_copy.setStyleSheet("""
                 QPushButton {
                     background: #15803d;
                     color: white;
                     font-weight: bold;
                     font-size: 9pt;
-                    padding: 6px 14px;
+                    padding: 7px 14px;
                     border: none;
                     border-radius: 5px;
                 }
             """)
 
-    def check_activation(self):
-        user_key = self.key_input.text().strip()
-        is_valid, matched_hwid, expected_key = is_key_valid_for_machine(user_key)
+    def _open_whatsapp(self):
+        msg = f"Hello Tahir, I would like to buy a license for PITC Suite.\nMy Hardware ID is: {self.device_id}"
+        encoded = urllib.parse.quote(msg)
+        url = f"https://wa.me/{SUPPORT_WHATSAPP}?text={encoded}"
+        webbrowser.open(url)
 
-        if is_valid:
-            primary_hwid = get_hardware_id()
-            primary_key = generate_expected_key(primary_hwid)
-            # Save both the primary key and the entered valid key across all locations
-            save_license_key([primary_key, expected_key, user_key])
-            QMessageBox.information(self, "Activated", "Thank you! Software activated successfully.")
+    def _open_email(self):
+        subject = urllib.parse.quote("PITC Suite License Activation Request")
+        body = urllib.parse.quote(f"Hello Tahir,\n\nI want to purchase a license for PITC Suite.\n\nHardware ID: {self.device_id}\n\nThank you!")
+        url = f"mailto:{SUPPORT_EMAIL}?subject={subject}&body={body}"
+        webbrowser.open(url)
+
+    def _on_activate_clicked(self):
+        key = self.key_entry.text().strip().upper()
+        if not key:
+            self.status_lbl.setText("Please enter your Serial Key.")
+            self.status_lbl.setStyleSheet(f"color: {COLOR_WARNING}; font-size: 8.5pt;")
+            return
+
+        self.btn_activate.setEnabled(False)
+        self.btn_activate.setText("Verifying with License Server...")
+        self.status_lbl.setText("Contacting server and validating hardware signature...")
+        self.status_lbl.setStyleSheet(f"color: #38bdf8; font-size: 8.5pt;")
+
+        # Run activation in background thread to prevent UI lockup
+        self._worker = ActivationWorker(key, self.device_id, self.candidate_ids)
+        self._worker.finished_signal.connect(self._on_activation_finished)
+        self._worker.start()
+
+    def _on_activation_finished(self, res: dict):
+        self.btn_activate.setEnabled(True)
+        self.btn_activate.setText("Activate PITC Suite")
+
+        if res.get("valid"):
+            now_iso = datetime.now(timezone.utc).isoformat()
+            lic_data = {
+                "serial_key": res.get("serial_key") or self.key_entry.text().strip().upper(),
+                "device_id": self.device_id,
+                "plan_type": res.get("plan_type", "active"),
+                "duration_days": res.get("duration_days", 30),
+                "activated_at": res.get("activated_at", now_iso),
+                "expires_at": res.get("expires_at"),
+                "max_devices": res.get("max_devices", 1),
+                "last_verified": now_iso,
+                "valid": True
+            }
+            save_local_license(lic_data)
+
+            self.activated = True
+            self.license_info = lic_data
+
+            QMessageBox.information(
+                self,
+                "Activation Successful",
+                f"Thank you! PITC Suite has been successfully activated.\n\n"
+                f"Plan: {lic_data.get('plan_type', 'Standard')}\n"
+                f"Device ID: {self.device_id}\n\n"
+                "All features are now unlocked."
+            )
             self.accept()
         else:
-            QMessageBox.critical(self, "Error", "Invalid Serial Key! Please check and try again.")
+            err_msg = res.get("message") or "Activation failed. Please check your serial key."
+            self.status_lbl.setText(f"❌ {err_msg}")
+            self.status_lbl.setStyleSheet(f"color: {COLOR_ERROR}; font-size: 8.5pt;")
 
+    def closeEvent(self, event):
+        """Prevent launching application if closed without activation."""
+        if not self.activated:
+            sys.exit(0)
+        event.accept()
+
+
+# ====================================================================
+# ENTRYPOINT VERIFICATION FUNCTION
+# ====================================================================
 
 def require_license() -> bool:
     """
-    Checks if a valid license exists across any storage location for any valid machine HWID.
-    If valid, synchronizes across all storage tiers and returns True without prompting.
-    If no valid license exists, prompts with LicenseDialog.
+    Main license requirement guard called on application startup.
+    1. Reads local license cache (%APPDATA%/PITCSuite/license.json).
+    2. Validates against remote Vercel API.
+    3. If offline, checks 7-day offline grace period.
+    4. If legacy offline key exists, honors it.
+    5. If invalid or missing, displays sleek LicenseGateDialog.
     """
-    saved_keys = load_saved_license_keys()
+    local_lic = load_local_license()
+    primary_id = get_device_id()
+    candidate_ids = get_candidate_device_ids()
 
-    for key in saved_keys:
-        is_valid, matched_hwid, expected_key = is_key_valid_for_machine(key)
-        if is_valid:
-            # Silently synchronize & ensure primary key and matched key are preserved everywhere
-            primary_hwid = get_hardware_id()
-            primary_key = generate_expected_key(primary_hwid)
-            save_license_key([primary_key, expected_key, key])
+    if local_lic and local_lic.get("serial_key"):
+        serial_key = local_lic["serial_key"]
+
+        # Perform remote check against Supabase via Vercel API
+        res = verify_license_remote(serial_key, primary_id, candidate_ids)
+
+        if res.get("valid"):
+            local_lic.update(res)
+            local_lic["last_verified"] = datetime.now(timezone.utc).isoformat()
+            local_lic["valid"] = True
+            save_local_license(local_lic)
             return True
 
-    # If no valid license, ensure QApplication exists and show dialog
+        # If network error, check offline grace period
+        if res.get("status") == "network_error":
+            is_valid, reason = is_offline_grace_valid(local_lic)
+            if is_valid:
+                return True
+            initial_error = "Unable to connect to license server and offline grace period has expired."
+        else:
+            initial_error = res.get("message") or "License subscription is expired or inactive."
+    else:
+        initial_error = ""
+
+    # Ensure QApplication exists before opening dialog
     app = QApplication.instance()
     if not app:
         app = QApplication(sys.argv)
 
-    primary_hwid = get_hardware_id()
-    dialog = LicenseDialog(primary_hwid)
+    dialog = LicenseGateDialog(initial_error=initial_error)
     result = dialog.exec()
-    if result != QDialog.Accepted:
+    if result != QDialog.Accepted or not dialog.activated:
         sys.exit(0)
 
     return True

@@ -13,3 +13,4 @@ pyautogui>=0.9.54
 pyotp>=2.9.0
 PyMuPDF>=1.23.0
 pyinstaller>=6.0.0
+packaging>=23.0

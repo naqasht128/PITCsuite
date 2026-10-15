@@ -194,3 +194,10 @@ Skey.py
 skey.py
 serialkey.txt
 *.key
+serialkeys_history.txt
+.admin_config.json
+license.json
+
+# License Server
+license_server/.env
+license_server/node_modules/

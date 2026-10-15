@@ -170,23 +170,41 @@ class DownloadThread(QThread):
     finished = Signal(str)
     error = Signal(str)
 
-    def __init__(self, file_id, dest):
+    def __init__(self, target: str, dest: str):
         super().__init__()
-        self.file_id = file_id
+        self.target = target
         self.dest = dest
 
     def run(self):
         try:
+            # 1. Direct or Vercel Proxy streaming URL (HTTP/HTTPS)
+            if self.target and (self.target.startswith("http://") or self.target.startswith("https://")) and "docs.google.com" not in self.target and "drive.google.com" not in self.target:
+                session = requests.Session()
+                response = session.get(self.target, stream=True, timeout=30)
+                response.raise_for_status()
+                total_size = int(response.headers.get('content-length', 0))
+                downloaded = 0
+                with open(self.dest, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=65536):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            self.progress.emit(downloaded, total_size)
+                self.finished.emit(self.dest)
+                return
+
+            # 2. Google Drive File ID / URL fallback
+            file_id = self.target if self.target and not self.target.startswith("http") else GDRIVE_SETUP_FILE_ID
             url = "https://docs.google.com/uc?export=download"
             session = requests.Session()
-            response = session.get(url, params={'id': self.file_id}, stream=True)
+            response = session.get(url, params={'id': file_id}, stream=True)
             
             if "text/html" in response.headers.get("Content-Type", ""):
                 text = response.text
                 match = re.search(r'name="uuid" value="([^"]+)"', text)
                 if match:
-                    uuid = match.group(1)
-                    final_url = f"https://drive.usercontent.google.com/download?id={self.file_id}&export=download&confirm=t&uuid={uuid}"
+                    uuid_val = match.group(1)
+                    final_url = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t&uuid={uuid_val}"
                     response = session.get(final_url, stream=True)
                 else:
                     token = None
@@ -198,7 +216,7 @@ class DownloadThread(QThread):
                         match2 = re.search(r'confirm=([a-zA-Z0-9_-]+)', text)
                         if match2:
                             token = match2.group(1)
-                    final_url = f"{url}&id={self.file_id}"
+                    final_url = f"{url}&id={file_id}"
                     if token:
                         final_url += f"&confirm={token}"
                     response = session.get(final_url, stream=True)
@@ -208,7 +226,7 @@ class DownloadThread(QThread):
             
             downloaded = 0
             with open(self.dest, "wb") as file:
-                for chunk in response.iter_content(chunk_size=8192):
+                for chunk in response.iter_content(chunk_size=16384):
                     if chunk:
                         file.write(chunk)
                         downloaded += len(chunk)
@@ -219,12 +237,47 @@ class DownloadThread(QThread):
 
 
 class UpdateChecker(QThread):
-    result = Signal(bool, str, list)  # update_available, version_string, release_notes
+    result = Signal(bool, str, list, str)  # update_available, version_string, release_notes, download_url
 
     def run(self):
+        # 1. Primary: Check secure Vercel License/Update API
+        try:
+            from pitcsuite.license_manager import get_api_base_url
+            api_url = get_api_base_url()
+            latest_url = f"{api_url}/api/updates/latest"
+            resp = requests.get(latest_url, timeout=7)
+            if resp.status_code == 200:
+                data = resp.json()
+                raw_ver = str(data.get("version", "")).strip()
+                if raw_ver:
+                    clean_tag = f"v{raw_ver.lstrip('vV')}"
+                    download_url = str(data.get("download_url", "")).strip()
+                    server_notes = data.get("release_notes", "")
+
+                    notes_list = []
+                    if isinstance(server_notes, list):
+                        notes_list = [str(n).strip() for n in server_notes if str(n).strip()]
+                    elif isinstance(server_notes, str) and server_notes.strip():
+                        notes_list = [n.strip() for n in server_notes.splitlines() if n.strip()]
+
+                    if not notes_list:
+                        notes_list = get_release_notes(clean_tag)
+
+                    v_latest = version.parse(clean_tag.lstrip('vV'))
+                    v_current = version.parse(get_current_version().lstrip('vV'))
+                    if v_latest > v_current:
+                        self.result.emit(True, clean_tag, notes_list, download_url)
+                        return
+                    else:
+                        self.result.emit(False, clean_tag, notes_list, download_url)
+                        return
+        except Exception:
+            pass
+
+        # 2. Secondary Fallback: Check Google Drive version file
         try:
             version_url = get_gdrive_url_and_token(GDRIVE_VERSION_FILE_ID)
-            v_response = requests.get(version_url, timeout=10)
+            v_response = requests.get(version_url, timeout=8)
             v_response.raise_for_status()
             raw_text = v_response.text.strip()
             
@@ -233,14 +286,17 @@ class UpdateChecker(QThread):
             if latest_tag and latest_tag.lower().startswith("v"):
                 v_latest = version.parse(latest_tag.lstrip('vV'))
                 v_current = version.parse(get_current_version().lstrip('vV'))
+                notes = remote_notes if remote_notes else get_release_notes(latest_tag)
                 if v_latest > v_current:
-                    notes = remote_notes if remote_notes else get_release_notes(latest_tag)
-                    self.result.emit(True, latest_tag, notes)
+                    self.result.emit(True, latest_tag, notes, GDRIVE_SETUP_FILE_ID)
+                    return
+                else:
+                    self.result.emit(False, latest_tag, notes, "")
                     return
             notes = remote_notes if remote_notes else get_release_notes(latest_tag or get_current_version())
-            self.result.emit(False, latest_tag, notes)
+            self.result.emit(False, latest_tag, notes, "")
         except Exception:
-            self.result.emit(False, "", [])
+            self.result.emit(False, "", [], "")
 
 
 class UpdateAvailableDialog(QDialog):
@@ -537,7 +593,7 @@ def check_for_updates(parent_window, silent=False):
     checker = UpdateChecker(parent_window)
     parent_window._update_checker = checker  # Prevent GC
     
-    def on_result(has_update, latest_tag, notes):
+    def on_result(has_update, latest_tag, notes, download_url=""):
         if has_update:
             if silent:
                 if hasattr(parent_window, 'notify_update_available'):
@@ -545,7 +601,7 @@ def check_for_updates(parent_window, silent=False):
             else:
                 dlg = UpdateAvailableDialog(get_current_version(), latest_tag, notes, parent_window)
                 if dlg.exec() == QDialog.Accepted:
-                    start_download(parent_window, latest_tag, notes)
+                    start_download(parent_window, latest_tag, notes, download_url=download_url)
         else:
             if not silent:
                 if latest_tag == "":
@@ -558,7 +614,7 @@ def check_for_updates(parent_window, silent=False):
     checker.start()
 
 
-def start_download(parent_window, latest_tag=None, notes=None):
+def start_download(parent_window, latest_tag=None, notes=None, download_url=None):
     """Downloads update setup installer and executes detached silent install."""
     progress_dialog = QProgressDialog("Downloading Update...", "Cancel", 0, 100, parent_window)
     ver_str = f" ({latest_tag})" if latest_tag else ""
@@ -569,8 +625,9 @@ def start_download(parent_window, latest_tag=None, notes=None):
     progress_dialog.resize(420, 110)
 
     dest_path = os.path.join(os.environ.get("TEMP", "C:\\Temp"), "PITCSuite_Setup.exe")
+    target_source = download_url if download_url else GDRIVE_SETUP_FILE_ID
     
-    downloader = DownloadThread(GDRIVE_SETUP_FILE_ID, dest_path)
+    downloader = DownloadThread(target_source, dest_path)
     parent_window._downloader = downloader  # Prevent GC crash
     
     def on_progress(downloaded, total):
@@ -638,7 +695,8 @@ def start_download(parent_window, latest_tag=None, notes=None):
             subprocess.Popen(
                 installer_args,
                 env=env,
-                creationflags=creation_flags
+                creationflags=creation_flags,
+                close_fds=True
             )
         except Exception:
             # Fallback to ShellExecute if CreateProcess direct fails
