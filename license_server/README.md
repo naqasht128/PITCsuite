@@ -20,7 +20,7 @@ Serverless Node.js API backed by Supabase PostgreSQL for device-locked licensing
    - `ADMIN_SECRET`: Strong secret password (used by `generate_key.py`)
    - `GITHUB_TOKEN`: Fine-grained Personal Access Token with **Contents: Read-only** access to `naqasht128/PitcSuite`.
    - `GITHUB_REPO`: `naqasht128/PitcSuite`
-4. Deploy! Your API will be live at `https://pitcsuite.vercel.app` (or your assigned Vercel domain).
+4. Deploy! Your API will be live at `https://pit-csuite.vercel.app` (or your assigned Vercel domain).
 
 ## 📡 Endpoints
 

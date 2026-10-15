@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 # CONFIGURATION & CONSTANTS
 # ====================================================================
 
-DEFAULT_LICENSE_API_URL = "https://pitcsuite.vercel.app"
+DEFAULT_LICENSE_API_URL = "https://pit-csuite.vercel.app"
 APP_NAME = "PITCSuite"
 SUPPORT_WHATSAPP = "923339962474"
 SUPPORT_EMAIL = "tahir.naqash4@gmail.com"

@@ -22,7 +22,7 @@ from tkinter import messagebox, ttk
 import requests
 
 # Default API Configuration
-DEFAULT_API_URL = os.environ.get("LICENSE_API_URL", "https://pitcsuite.vercel.app").rstrip("/")
+DEFAULT_API_URL = os.environ.get("LICENSE_API_URL", "https://pit-csuite.vercel.app").rstrip("/")
 DEFAULT_ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
 CONFIG_FILE = Path(__file__).resolve().parent / ".admin_config.json"
 HISTORY_FILE = Path(__file__).resolve().parent / "serialkeys_history.txt"
