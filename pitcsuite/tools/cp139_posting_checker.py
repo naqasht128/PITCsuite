@@ -432,7 +432,7 @@ def download_cp139_template(save_path: str) -> None:
         c1.border = thin_border
         c2.border = thin_border
 
-    note_cell = ws.cell(row=7, column=1, value="Note: In CP 139 text file, where the tool will search, the last figure of AC No. is omitted. Both 14-digit/15-char AC Nos and 13-digit AC Nos are automatically matched.")
+    note_cell = ws.cell(row=7, column=1, value="Note: Enter the complete 14-digit Account Numbers in Col A and corresponding Para Sr. Nos in Col B.")
     note_cell.font = Font(name="Segoe UI", size=9, italic=True, color="555555")
 
     ws.column_dimensions["A"].width = 25
@@ -493,78 +493,60 @@ def load_cp139_pages(filepath: str) -> List[Dict[str, Any]]:
     return pages
 
 
-def generate_account_candidates(raw_ac: Any) -> List[Tuple[str, bool]]:
+def clean_account_number(raw_ac: Any) -> str:
     """
-    Generate candidate matching keys for an account number.
-    Returns list of (candidate_str, is_last_figure_omitted).
+    Cleans and standardizes an account number from user/Excel input.
+    Extracts pure digits or trimmed string.
     """
     if raw_ac is None:
-        return []
+        return ""
     s = str(raw_ac).strip()
     digits = re.sub(r"[^0-9]", "", s)
-    if not digits or len(digits) < 6:
-        return []
-
-    candidates = []
-    candidates.append((digits, False))
-
-    if len(digits) >= 14:
-        candidates.append((digits[:-1], True))
-    if len(digits) == 15:
-        candidates.append((digits[:14], False))
-        candidates.append((digits[:13], True))
-
-    seen = set()
-    dedup = []
-    for c, omitted in candidates:
-        if c not in seen:
-            seen.add(c)
-            dedup.append((c, omitted))
-    return dedup
+    return digits if digits else s
 
 
-def find_account_on_page(page: Dict[str, Any], candidates: List[Tuple[str, bool]]) -> Optional[Dict[str, Any]]:
-    """Searches a page for candidate account numbers."""
+def find_account_on_page(page: Dict[str, Any], target_ac: str) -> Optional[Dict[str, Any]]:
+    """Searches a page for an exact target account number."""
+    if not target_ac:
+        return None
     lines = page["lines"]
-    for cand, is_omitted in candidates:
-        for line_no, line in enumerate(lines):
-            pos = line.find(cand)
-            if pos != -1:
-                before_char = line[pos - 1] if pos > 0 else " "
-                after_char = line[pos + len(cand)] if pos + len(cand) < len(line) else " "
-                if before_char.isdigit() or after_char.isdigit():
-                    continue
+    for line_no, line in enumerate(lines):
+        pos = line.find(target_ac)
+        if pos != -1:
+            before_char = line[pos - 1] if pos > 0 else " "
+            after_char = line[pos + len(target_ac)] if pos + len(target_ac) < len(line) else " "
+            if before_char.isdigit() or after_char.isdigit():
+                continue
 
-                grand_total = 0.0
-                status_str = "Posted"
+            grand_total = 0.0
+            status_str = "Posted"
 
-                for sub_i in range(line_no, min(line_no + 6, len(lines))):
-                    sub_line = lines[sub_i]
-                    if "Not Pos" in sub_line or "NOT POS" in sub_line or "RFP" in sub_line or "NR" in sub_line:
-                        status_str = "Not Pos"
-                    elif "Posted" in sub_line or "POSTED" in sub_line:
-                        status_str = "Posted"
+            for sub_i in range(line_no, min(line_no + 6, len(lines))):
+                sub_line = lines[sub_i]
+                if "Not Pos" in sub_line or "NOT POS" in sub_line or "RFP" in sub_line or "NR" in sub_line:
+                    status_str = "Not Pos"
+                elif "Posted" in sub_line or "POSTED" in sub_line:
+                    status_str = "Posted"
 
-                    amounts = re.findall(r'(?<![0-9])-?[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})(?![0-9])', sub_line)
-                    if amounts:
-                        try:
-                            grand_total = float(amounts[-1].replace(",", ""))
-                        except ValueError:
-                            pass
+                amounts = re.findall(r'(?<![0-9])-?[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})(?![0-9])', sub_line)
+                if amounts:
+                    try:
+                        grand_total = float(amounts[-1].replace(",", ""))
+                    except ValueError:
+                        pass
 
-                return {
-                    "matched_cand": cand,
-                    "is_omitted": is_omitted,
-                    "line_no": line_no,
-                    "line_text": line,
-                    "col_start": pos,
-                    "col_end": pos + len(cand),
-                    "amount": grand_total,
-                    "status": status_str,
-                    "page_num": page["page_num"],
-                    "source_path": page["source_path"],
-                    "source_name": page["source_name"]
-                }
+            return {
+                "matched_cand": target_ac,
+                "line_no": line_no,
+                "line_text": line,
+                "col_start": pos,
+                "col_end": pos + len(target_ac),
+                "amount": grand_total,
+                "status": status_str,
+                "page_num": page["page_num"],
+                "source_path": page["source_path"],
+                "source_name": page["source_name"]
+            }
     return None
 
 
@@ -674,7 +656,7 @@ def export_matching_results_to_excel(results: List[Dict[str, Any]], out_path: st
     ws.title = "CP139_Matched_Results"
 
     headers = [
-        "Sr.", "Input AC No.", "Matched Ref# in CP139 (Last figure omitted)",
+        "Sr.", "Input AC No.", "Matched Ref# in CP139",
         "Para Sr. No.", "Status", "Page No.", "Grand Total", "Posting Status",
         "Source Report", "Generated PDF File"
     ]
@@ -719,8 +701,6 @@ def export_matching_results_to_excel(results: List[Dict[str, Any]], out_path: st
             row_fill = fill_not_found
 
         ref_display = r.get("matched_ref", "—")
-        if is_found and r.get("is_omitted"):
-            ref_display = f"{ref_display} (Last figure omitted)"
 
         row_values = [
             row_idx - 1,
@@ -912,16 +892,15 @@ class CP139Worker(QThread):
             if self.isInterruptionRequested():
                 return
             raw_ac = item["input_ac"]
-            candidates = generate_account_candidates(raw_ac)
+            clean_ac = clean_account_number(raw_ac)
             match = None
             for p in all_pages:
-                match = find_account_on_page(p, candidates)
+                match = find_account_on_page(p, clean_ac)
                 if match:
                     break
 
             if match:
-                omitted_note = " (Last figure omitted in CP139)" if match["is_omitted"] else ""
-                self.log.emit(f"   ✔ Found AC {raw_ac}{omitted_note} on Page {match['page_num']} ({match['source_name']}) -> Ref# {match['matched_cand']}")
+                self.log.emit(f"   ✔ Found AC {raw_ac} on Page {match['page_num']} ({match['source_name']}) -> Ref# {match['matched_cand']}")
                 key = (match["source_path"], match["page_num"])
                 if key not in page_matches_map:
                     target_p = next((p for p in all_pages if p["source_path"] == match["source_path"] and p["page_num"] == match["page_num"]), None)
@@ -937,7 +916,6 @@ class CP139Worker(QThread):
                 matched_results.append({
                     "input_ac": raw_ac,
                     "matched_ref": match["matched_cand"],
-                    "is_omitted": match["is_omitted"],
                     "para_sr": item["para_sr"],
                     "status": "Found",
                     "page_num": match["page_num"],
@@ -951,7 +929,6 @@ class CP139Worker(QThread):
                 matched_results.append({
                     "input_ac": raw_ac,
                     "matched_ref": "—",
-                    "is_omitted": False,
                     "para_sr": item["para_sr"],
                     "status": "Not Found",
                     "page_num": "—",
