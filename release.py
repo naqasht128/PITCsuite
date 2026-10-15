@@ -124,6 +124,28 @@ def update_version_files(new_version: str):
             README_MD.write_text(new_readme_content, encoding="utf-8")
             print(f"  ✔ Updated README.md version badge: {new_version}")
 
+    # 4. Generate clean RELEASE_NOTES.md (eliminates GitHub compare links)
+    rn_file = ROOT_DIR / "RELEASE_NOTES.md"
+    bullets = []
+    try:
+        from pitcsuite.auto_updater import get_release_notes
+        bullets = get_release_notes(new_version)
+    except Exception:
+        pass
+
+    if bullets:
+        cleaned_bullets = []
+        for b in bullets:
+            c = re.sub(r'^[•\-\*\d\.\)\s]+', '', b).strip()
+            c = re.sub(r'</?code>', '`', c)
+            c = re.sub(r'</?[bi]>', '**', c)
+            cleaned_bullets.append(c)
+        content = "\n".join(f"• {b}" for b in cleaned_bullets)
+    else:
+        content = f"• Performance improvements, enhancements, and stability updates in v{new_version}"
+    rn_file.write_text(content, encoding="utf-8")
+    print(f"  ✔ Generated clean RELEASE_NOTES.md with {len(bullets) if bullets else 1} item(s)")
+
 
 def verify_python_syntax():
     """Compiles all Python files in the repository to guarantee no syntax errors."""
@@ -236,10 +258,11 @@ def main():
         try:
             import json
             import urllib.request
-            set_url = f"{api_url}/api/admin/set-update"
+            rn_file = ROOT_DIR / "RELEASE_NOTES.md"
+            notes_for_api = rn_file.read_text(encoding="utf-8") if rn_file.exists() else msg
             payload = json.dumps({
                 "version": target_ver,
-                "release_notes": msg,
+                "release_notes": notes_for_api,
                 "file_name": "PITCSuite_Setup.exe"
             }).encode("utf-8")
             req = urllib.request.Request(

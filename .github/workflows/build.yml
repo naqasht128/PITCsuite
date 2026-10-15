@@ -77,7 +77,7 @@ jobs:
             dist/PITCSuite_Setup.exe
             dist/pitcsuite.exe
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.tag_name }}
-          name: PITC Suite Release ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.tag_name }}
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
+          generate_release_notes: false
           draft: false
           prerelease: false

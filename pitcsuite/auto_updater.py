@@ -105,12 +105,17 @@ def get_current_version() -> str:
 def get_release_notes(ver: str) -> List[str]:
     """Retrieve comprehensive release notes bullets for a given version tag."""
     clean_ver = ver.strip()
-    if clean_ver in DEFAULT_RELEASE_NOTES:
+    if clean_ver in DEFAULT_RELEASE_NOTES and DEFAULT_RELEASE_NOTES[clean_ver]:
         return DEFAULT_RELEASE_NOTES[clean_ver]
     with_v = f"v{clean_ver.lstrip('vV')}"
-    if with_v in DEFAULT_RELEASE_NOTES:
+    if with_v in DEFAULT_RELEASE_NOTES and DEFAULT_RELEASE_NOTES[with_v]:
         return DEFAULT_RELEASE_NOTES[with_v]
-    return DEFAULT_RELEASE_NOTES.get("v2.8.93", [])
+    
+    # Fallback to the latest available notes (keeps previous what's new if version unchanged)
+    for k in sorted(DEFAULT_RELEASE_NOTES.keys(), reverse=True):
+        if DEFAULT_RELEASE_NOTES[k]:
+            return DEFAULT_RELEASE_NOTES[k]
+    return []
 
 
 def parse_version_response(raw_text: str) -> Tuple[str, List[str]]:
@@ -269,11 +274,22 @@ class UpdateChecker(QThread):
                     server_notes = data.get("release_notes", "")
 
                     notes_list = []
+                    raw_notes = []
                     if isinstance(server_notes, list):
-                        notes_list = [str(n).strip() for n in server_notes if str(n).strip()]
+                        raw_notes = server_notes
                     elif isinstance(server_notes, str) and server_notes.strip():
-                        notes_list = [n.strip() for n in server_notes.splitlines() if n.strip()]
+                        raw_notes = server_notes.splitlines()
 
+                    for n in raw_notes:
+                        line_str = str(n).strip()
+                        # Strictly reject GitHub compare links, changelog links, or commit diff urls
+                        if re.search(r'(?:full\s*changelog|github\.com/.+/compare|compare/v\d|\/compare\/)', line_str, re.I):
+                            continue
+                        line_clean = re.sub(r'^[•\-\*\d\.\)\s]+', '', line_str).strip()
+                        if line_clean:
+                            notes_list.append(line_clean)
+
+                    # If no valid notes remain from the server, fallback to local/previous release notes
                     if not notes_list:
                         notes_list = get_release_notes(clean_tag)
 
@@ -300,14 +316,22 @@ class UpdateChecker(QThread):
             if latest_tag and latest_tag.lower().startswith("v"):
                 v_latest = version.parse(latest_tag.lstrip('vV'))
                 v_current = version.parse(get_current_version().lstrip('vV'))
-                notes = remote_notes if remote_notes else get_release_notes(latest_tag)
+                clean_remote = [
+                    n for n in remote_notes 
+                    if not re.search(r'(?:full\s*changelog|github\.com/.+/compare|compare/v\d|\/compare\/)', n, re.I)
+                ] if remote_notes else []
+                notes = clean_remote if clean_remote else get_release_notes(latest_tag)
                 if v_latest > v_current:
                     self.result.emit(True, latest_tag, notes, GDRIVE_SETUP_FILE_ID)
                     return
                 else:
                     self.result.emit(False, latest_tag, notes, "")
                     return
-            notes = remote_notes if remote_notes else get_release_notes(latest_tag or get_current_version())
+            clean_remote = [
+                n for n in remote_notes 
+                if not re.search(r'(?:full\s*changelog|github\.com/.+/compare|compare/v\d|\/compare\/)', n, re.I)
+            ] if remote_notes else []
+            notes = clean_remote if clean_remote else get_release_notes(latest_tag or get_current_version())
             self.result.emit(False, latest_tag, notes, "")
         except Exception:
             self.result.emit(False, "", [], "")
