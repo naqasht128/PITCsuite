@@ -254,9 +254,38 @@ def save_local_license(data: dict) -> None:
             pass
 
 
-# ====================================================================
-# REMOTE API CLIENT
-# ====================================================================
+def format_expiry_date(iso_str: str | None) -> str:
+    """Format an ISO timestamp cleanly, e.g. '14 Jan 2027 (89 days remaining)'."""
+    if not iso_str:
+        return "Not Activated"
+    try:
+        clean_ts = str(iso_str).replace("Z", "+00:00")
+        dt = datetime.fromisoformat(clean_ts)
+        now = datetime.now(timezone.utc)
+        diff = dt - now
+        date_str = dt.strftime("%d %b %Y")
+        if diff.days > 0:
+            return f"{date_str} ({diff.days} days remaining)"
+        elif diff.total_seconds() > 0:
+            return f"{date_str} (Expires today)"
+        else:
+            return f"{date_str} (Expired)"
+    except Exception:
+        return str(iso_str)[:10]
+
+
+def format_plan_type(plan_code: str | None) -> str:
+    """Convert machine plan code to human friendly label."""
+    mapping = {
+        "1_month": "1 Month (1 Device)",
+        "3_months": "3 Months (Up to 2 Devices)",
+        "6_months": "6 Months (Up to 2 Devices)",
+        "1_year": "1 Year (Up to 3 Devices)",
+    }
+    if not plan_code:
+        return "Not Activated"
+    return mapping.get(str(plan_code).lower(), str(plan_code).replace("_", " ").title())
+
 
 def verify_license_remote(serial_key: str, device_id: str, candidate_ids: Optional[List[str]] = None) -> dict:
     """Sends verification request to Vercel API."""

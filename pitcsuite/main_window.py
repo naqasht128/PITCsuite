@@ -24,6 +24,10 @@ from pitcsuite.auto_updater import (
     check_for_updates, get_current_version, get_release_notes,
     UpToDateDialog, UpdateAvailableDialog, start_download, show_post_update_dialog
 )
+from pitcsuite.license_manager import (
+    load_local_license, get_device_id, format_plan_type,
+    format_expiry_date, LicenseGateDialog
+)
 from pitcsuite.tools.integrated_tools import (
     CP22TCheckerPanel, BillScraperPanel, FileMoverPanel,
     CP52PostingCheckerPanel, CP136PostingCheckerPanel, CP139PostingCheckerPanel, CP21cConverterPanel,
@@ -39,7 +43,7 @@ TOOLS = [
     ("Payment Extractor from 88L",    PaymentExtract88LPanel, "payment_ext"),
     ("CP 52 Posting to PDF",          CP52PostingCheckerPanel, "cp52"),
     ("CP 136 & 137 Posting Checker",   CP136PostingCheckerPanel, "cp136"),
-    ("CP 139 Posting Checker",        CP139PostingCheckerPanel, "cp139"),
+    ("CP 139 Posting check/Make PDF", CP139PostingCheckerPanel, "cp139"),
     ("CP 22T Posting Checker",        CP22TCheckerPanel, "cp22t"),
     ("CP21c Converter",               CP21cConverterPanel, "cp21c"),
     ("Double CR Checker",             DoubleCRPanel, "double_cr"),
@@ -52,44 +56,159 @@ TOOLS = [
 
 
 class AboutDialog(QDialog):
+    """Sleek modal dialog showing application, active license, and developer information."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("About PITC Suite")
-        self.setFixedSize(400, 260)
+        self.setFixedSize(480, 480)
         self.setModal(True)
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
 
         self.setStyleSheet("""
             QDialog {
-                background: #20242c;
+                background: #1e1e1e;
                 color: #edf0f5;
             }
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 18, 20, 18)
-        layout.setSpacing(12)
+        layout.setContentsMargins(22, 18, 22, 18)
+        layout.setSpacing(10)
 
+        # App Header
         title_lbl = QLabel("PITC Suite")
-        title_lbl.setStyleSheet("color: #7eb8f7; font-size: 14pt; font-weight: bold;")
-        title_lbl.setAlignment(Qt.AlignCenter)
+        title_lbl.setStyleSheet("color: #7eb8f7; font-size: 15pt; font-weight: bold;")
         layout.addWidget(title_lbl)
 
         ver_lbl = QLabel(f"Version {get_current_version()}")
         ver_lbl.setStyleSheet("color: #9ba8ba; font-size: 9pt;")
-        ver_lbl.setAlignment(Qt.AlignCenter)
         layout.addWidget(ver_lbl)
 
-        dev_lbl = QLabel("Developed by TN Developers Co.\nEmail: tahir.naqash4@gmail.com\nContact: +923339962474")
-        dev_lbl.setStyleSheet("color: #edf0f5; font-size: 10pt;")
-        dev_lbl.setAlignment(Qt.AlignCenter)
-        layout.addWidget(dev_lbl)
+        # 1. License Information Card
+        lic = getattr(parent, "active_license", None) or load_local_license()
+        serial_key = lic.get("serial_key", "Not Activated")
+        plan_str = format_plan_type(lic.get("plan_type"))
+        expiry_str = format_expiry_date(lic.get("expires_at"))
 
+        lic_card = QFrame()
+        lic_card.setStyleSheet("""
+            QFrame {
+                background: #252526;
+                border: 1px solid #3c3c3c;
+                border-radius: 6px;
+            }
+            QLabel {
+                border: none;
+                background: transparent;
+            }
+        """)
+        lic_layout = QVBoxLayout(lic_card)
+        lic_layout.setContentsMargins(14, 12, 14, 12)
+        lic_layout.setSpacing(6)
+
+        hdr_lbl = QLabel("LICENSE INFORMATION")
+        hdr_lbl.setStyleSheet("color: #858585; font-size: 8pt; font-weight: bold;")
+        lic_layout.addWidget(hdr_lbl)
+
+        key_row = QHBoxLayout()
+        key_title = QLabel("Key: ")
+        key_title.setStyleSheet("color: #ffffff; font-size: 9pt; font-weight: bold;")
+        key_row.addWidget(key_title)
+
+        key_val = QLabel(serial_key)
+        key_val.setStyleSheet("color: #4ec9b0; font-family: Consolas, monospace; font-size: 9.5pt; font-weight: bold;")
+        key_row.addWidget(key_val)
+        key_row.addStretch()
+
+        self.change_key_btn = QPushButton("🔑 Change Key")
+        self.change_key_btn.setCursor(Qt.PointingHandCursor)
+        self.change_key_btn.setStyleSheet("""
+            QPushButton {
+                background: #2d2d2d;
+                color: #ffffff;
+                font-size: 8pt;
+                font-weight: bold;
+                padding: 4px 8px;
+                border: 1px solid #3c3c3c;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background: #37373d;
+            }
+        """)
+        self.change_key_btn.clicked.connect(self._change_serial_key)
+        key_row.addWidget(self.change_key_btn)
+
+        self.copy_key_btn = QPushButton("📋 Copy")
+        self.copy_key_btn.setCursor(Qt.PointingHandCursor)
+        self.copy_key_btn.setStyleSheet("""
+            QPushButton {
+                background: #2d2d2d;
+                color: #cccccc;
+                font-size: 8pt;
+                padding: 4px 8px;
+                border: 1px solid #3c3c3c;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background: #37373d;
+                color: #ffffff;
+            }
+        """)
+        self.copy_key_btn.clicked.connect(self._copy_serial_key)
+        key_row.addWidget(self.copy_key_btn)
+        lic_layout.addLayout(key_row)
+
+        hw_lbl = QLabel(f"Hardware ID: {get_device_id()}")
+        hw_lbl.setStyleSheet("color: #858585; font-family: Consolas, monospace; font-size: 8pt;")
+        lic_layout.addWidget(hw_lbl)
+
+        plan_lbl = QLabel(f"Plan: {plan_str}")
+        plan_lbl.setStyleSheet("color: #cccccc; font-size: 9pt;")
+        lic_layout.addWidget(plan_lbl)
+
+        status_color = "#89d185" if "remaining" in expiry_str or "today" in expiry_str else "#cccccc"
+        status_lbl = QLabel(f"Status: {expiry_str}")
+        status_lbl.setStyleSheet(f"color: {status_color}; font-size: 9pt; font-weight: 500;")
+        lic_layout.addWidget(status_lbl)
+
+        layout.addWidget(lic_card)
+
+        # 2. Developer Information Card
+        dev_card = QFrame()
+        dev_card.setStyleSheet("""
+            QFrame {
+                background: #252526;
+                border: 1px solid #3c3c3c;
+                border-radius: 6px;
+            }
+            QLabel {
+                border: none;
+                background: transparent;
+            }
+        """)
+        dev_layout = QVBoxLayout(dev_card)
+        dev_layout.setContentsMargins(14, 12, 14, 12)
+        dev_layout.setSpacing(4)
+
+        dev_title = QLabel("Developed by TN Developers Co.")
+        dev_title.setStyleSheet("color: #ffffff; font-size: 9pt; font-weight: bold;")
+        dev_layout.addWidget(dev_title)
+
+        email_lbl = QLabel("Email: tahir.naqash4@gmail.com")
+        email_lbl.setStyleSheet("color: #cccccc; font-size: 9pt;")
+        dev_layout.addWidget(email_lbl)
+
+        contact_lbl = QLabel("Contact: 03339962474")
+        contact_lbl.setStyleSheet("color: #cccccc; font-size: 9pt;")
+        dev_layout.addWidget(contact_lbl)
+
+        layout.addWidget(dev_card)
         layout.addStretch()
 
+        # Bottom Button Row
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
-        btn_row.addStretch()
 
         whats_new_btn = QPushButton("✨ What's New")
         whats_new_btn.setCursor(Qt.PointingHandCursor)
@@ -110,6 +229,7 @@ class AboutDialog(QDialog):
         """)
         whats_new_btn.clicked.connect(self._show_whats_new)
         btn_row.addWidget(whats_new_btn)
+        btn_row.addStretch()
 
         close_btn = QPushButton("Close")
         close_btn.setCursor(Qt.PointingHandCursor)
@@ -118,7 +238,7 @@ class AboutDialog(QDialog):
                 background: #334155;
                 color: #e2e8f0;
                 font-size: 9pt;
-                padding: 6px 16px;
+                padding: 6px 18px;
                 border-radius: 5px;
                 border: none;
             }
@@ -128,8 +248,48 @@ class AboutDialog(QDialog):
         """)
         close_btn.clicked.connect(self.accept)
         btn_row.addWidget(close_btn)
-        btn_row.addStretch()
         layout.addLayout(btn_row)
+
+    def _copy_serial_key(self):
+        lic = getattr(self.parent(), "active_license", None) or load_local_license()
+        key = lic.get("serial_key", "")
+        if key:
+            QApplication.clipboard().setText(key)
+            self.copy_key_btn.setText("✅ Copied!")
+            self.copy_key_btn.setStyleSheet("""
+                QPushButton {
+                    background: #2d2d2d;
+                    color: #4ec9b0;
+                    font-size: 8pt;
+                    padding: 4px 8px;
+                    border: 1px solid #4ec9b0;
+                    border-radius: 4px;
+                }
+            """)
+            QTimer.singleShot(2000, lambda: self._reset_copy_btn() if not self.isHidden() else None)
+
+    def _reset_copy_btn(self):
+        self.copy_key_btn.setText("📋 Copy")
+        self.copy_key_btn.setStyleSheet("""
+            QPushButton {
+                background: #2d2d2d;
+                color: #cccccc;
+                font-size: 8pt;
+                padding: 4px 8px;
+                border: 1px solid #3c3c3c;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background: #37373d;
+                color: #ffffff;
+            }
+        """)
+
+    def _change_serial_key(self):
+        parent = self.parent()
+        self.accept()
+        gate = LicenseGateDialog(parent)
+        gate.exec()
 
     def _show_whats_new(self):
         notes = get_release_notes(get_current_version())

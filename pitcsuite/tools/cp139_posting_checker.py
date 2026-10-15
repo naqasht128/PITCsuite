@@ -23,6 +23,11 @@ from PySide6.QtWidgets import (
     QFileDialog, QMessageBox, QFrame
 )
 
+from reportlab.lib.colors import Color, black
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.pdfgen import canvas
+from pypdf import PdfReader, PdfWriter
+
 
 from pitcsuite.ui_helpers import START_BTN, STOP_BTN, hline, lbl, notify
 
@@ -384,8 +389,387 @@ def export_cp139_to_excel(
     }
 
 
+# ====================================================================
+# PDF GENERATION & EXCEL MATCHING ENGINE
+# ====================================================================
+
+def download_cp139_template(save_path: str) -> None:
+    """Creates a standardized template workbook for matching AC Nos against CP-139 reports."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Template"
+
+    headers = ["AC No.", "Para Sr. No."]
+    hdr_font = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+    hdr_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    hdr_align = Alignment(horizontal="center", vertical="center")
+    thin_border = Border(
+        left=Side(style="thin", color="D3D3D3"),
+        right=Side(style="thin", color="D3D3D3"),
+        top=Side(style="thin", color="D3D3D3"),
+        bottom=Side(style="thin", color="D3D3D3")
+    )
+
+    for col_idx, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=h)
+        cell.font = hdr_font
+        cell.fill = hdr_fill
+        cell.alignment = hdr_align
+        cell.border = thin_border
+
+    # Sample rows
+    samples = [
+        ("30266111005700", "1"),
+        ("09269310611170", "2"),
+        ("10269310676106", "3"),
+        ("14269310877502", "4"),
+    ]
+    for row_idx, (ac, para) in enumerate(samples, 2):
+        c1 = ws.cell(row=row_idx, column=1, value=ac)
+        c2 = ws.cell(row=row_idx, column=2, value=para)
+        c1.alignment = Alignment(horizontal="center")
+        c2.alignment = Alignment(horizontal="center")
+        c1.border = thin_border
+        c2.border = thin_border
+
+    note_cell = ws.cell(row=7, column=1, value="Note: In CP 139 text file, where the tool will search, the last figure of AC No. is omitted. Both 14-digit/15-char AC Nos and 13-digit AC Nos are automatically matched.")
+    note_cell.font = Font(name="Segoe UI", size=9, italic=True, color="555555")
+
+    ws.column_dimensions["A"].width = 25
+    ws.column_dimensions["B"].width = 18
+
+    os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
+    wb.save(save_path)
+
+
+def load_cp139_pages(filepath: str) -> List[Dict[str, Any]]:
+    """Loads all pages from a CP-139 (.txt or .pdf) report file."""
+    pages = []
+    ext = os.path.splitext(filepath)[1].lower()
+    fname = os.path.basename(filepath)
+
+    if ext == ".pdf":
+        try:
+            reader = PdfReader(filepath)
+            for idx, p in enumerate(reader.pages, start=1):
+                txt = p.extract_text() or ""
+                pages.append({
+                    "page_num": idx,
+                    "source_path": filepath,
+                    "source_name": fname,
+                    "lines": txt.replace("\r\n", "\n").replace("\r", "\n").split("\n"),
+                    "full_text": txt,
+                    "is_pdf": True,
+                    "pdf_page_obj": p
+                })
+        except Exception:
+            pass
+    else:
+        try:
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+
+            raw_pages = content.split('\x0c')
+            if len(raw_pages) <= 1 and "DATE & TIME" in content:
+                parts = re.split(r'(?m)(?=^\s*DATE & TIME\s*:)', content)
+                if len(parts) > 1:
+                    raw_pages = [p for p in parts if p.strip()]
+
+            for idx, ptext in enumerate(raw_pages, start=1):
+                if not ptext.strip():
+                    continue
+                pages.append({
+                    "page_num": idx,
+                    "source_path": filepath,
+                    "source_name": fname,
+                    "lines": ptext.replace("\r\n", "\n").replace("\r", "\n").split("\n"),
+                    "full_text": ptext,
+                    "is_pdf": False,
+                    "pdf_page_obj": None
+                })
+        except Exception:
+            pass
+
+    return pages
+
+
+def generate_account_candidates(raw_ac: Any) -> List[Tuple[str, bool]]:
+    """
+    Generate candidate matching keys for an account number.
+    Returns list of (candidate_str, is_last_figure_omitted).
+    """
+    if raw_ac is None:
+        return []
+    s = str(raw_ac).strip()
+    digits = re.sub(r"[^0-9]", "", s)
+    if not digits or len(digits) < 6:
+        return []
+
+    candidates = []
+    candidates.append((digits, False))
+
+    if len(digits) >= 14:
+        candidates.append((digits[:-1], True))
+    if len(digits) == 15:
+        candidates.append((digits[:14], False))
+        candidates.append((digits[:13], True))
+
+    seen = set()
+    dedup = []
+    for c, omitted in candidates:
+        if c not in seen:
+            seen.add(c)
+            dedup.append((c, omitted))
+    return dedup
+
+
+def find_account_on_page(page: Dict[str, Any], candidates: List[Tuple[str, bool]]) -> Optional[Dict[str, Any]]:
+    """Searches a page for candidate account numbers."""
+    lines = page["lines"]
+    for cand, is_omitted in candidates:
+        for line_no, line in enumerate(lines):
+            pos = line.find(cand)
+            if pos != -1:
+                before_char = line[pos - 1] if pos > 0 else " "
+                after_char = line[pos + len(cand)] if pos + len(cand) < len(line) else " "
+                if before_char.isdigit() or after_char.isdigit():
+                    continue
+
+                grand_total = 0.0
+                status_str = "Posted"
+
+                for sub_i in range(line_no, min(line_no + 6, len(lines))):
+                    sub_line = lines[sub_i]
+                    if "Not Pos" in sub_line or "NOT POS" in sub_line or "RFP" in sub_line or "NR" in sub_line:
+                        status_str = "Not Pos"
+                    elif "Posted" in sub_line or "POSTED" in sub_line:
+                        status_str = "Posted"
+
+                    amounts = re.findall(r'(?<![0-9])-?[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})(?![0-9])', sub_line)
+                    if amounts:
+                        try:
+                            grand_total = float(amounts[-1].replace(",", ""))
+                        except ValueError:
+                            pass
+
+                return {
+                    "matched_cand": cand,
+                    "is_omitted": is_omitted,
+                    "line_no": line_no,
+                    "line_text": line,
+                    "col_start": pos,
+                    "col_end": pos + len(cand),
+                    "amount": grand_total,
+                    "status": status_str,
+                    "page_num": page["page_num"],
+                    "source_path": page["source_path"],
+                    "source_name": page["source_name"]
+                }
+    return None
+
+
+def render_highlighted_txt_page(
+    page: Dict[str, Any],
+    matches_on_page: List[Dict[str, Any]],
+    output_pdf_path: str,
+    stamp_para: bool = True,
+    para_stamps: Optional[List[str]] = None
+) -> None:
+    """Renders a text page to landscape A4 with yellow highlight over matched lines and optional Para stamp."""
+    pw, ph = landscape(A4)
+    margin_x = 14
+    margin_y = 16
+    lines = page["lines"]
+    max_len = max((len(l) for l in lines), default=80)
+
+    font_size = min(8.0, max(4.5, (pw - 2 * margin_x) / (max_len * 0.60)))
+    leading = min(9.2, max(5.0, (ph - 2 * margin_y) / max(len(lines), 1)))
+
+    c = canvas.Canvas(output_pdf_path, pagesize=(pw, ph))
+    c.setFont("Courier", font_size)
+
+    match_lines = {m["line_no"]: m for m in matches_on_page}
+
+    for line_no, line in enumerate(lines):
+        y = ph - margin_y - (line_no + 1) * leading
+        if y < 10:
+            break
+
+        if line_no in match_lines:
+            m = match_lines[line_no]
+            sx = margin_x + m["col_start"] * font_size * 0.60
+            sw = max((m["col_end"] - m["col_start"]) * font_size * 0.60, 40)
+            c.setFillColor(Color(1.0, 0.88, 0.15, alpha=0.45))
+            c.rect(sx - 2, y - 2, sw + 4, leading + 2, stroke=0, fill=1)
+
+        c.setFillColor(black)
+        c.drawString(margin_x, y, line)
+
+    if stamp_para and para_stamps:
+        stamp_text = ", ".join(s for s in para_stamps if s)
+        if stamp_text:
+            if not stamp_text.lower().startswith("para"):
+                stamp_text = f"Para {stamp_text}"
+            c.setFont("Helvetica-Bold", 16)
+            c.setFillColor(black)
+            tw = c.stringWidth(stamp_text, "Helvetica-Bold", 16)
+            sx = pw - margin_x - tw - 12
+            sy = ph - margin_y - 14
+            c.drawString(sx, sy, stamp_text)
+            c.setLineWidth(1.4)
+            c.line(sx, sy - 2, sx + tw, sy - 2)
+
+    c.save()
+
+
+def render_highlighted_pdf_source_page(
+    page: Dict[str, Any],
+    matches_on_page: List[Dict[str, Any]],
+    output_pdf_path: str,
+    stamp_para: bool = True,
+    para_stamps: Optional[List[str]] = None
+) -> None:
+    """Overlays stamp and highlights on an existing PDF page."""
+    orig_page = page["pdf_page_obj"]
+    pw = float(orig_page.mediabox.width)
+    ph = float(orig_page.mediabox.height)
+
+    overlay_path = output_pdf_path + ".overlay.tmp"
+    c = canvas.Canvas(overlay_path, pagesize=(pw, ph))
+
+    if stamp_para and para_stamps:
+        stamp_text = ", ".join(s for s in para_stamps if s)
+        if stamp_text:
+            if not stamp_text.lower().startswith("para"):
+                stamp_text = f"Para {stamp_text}"
+            c.setFont("Helvetica-Bold", 16)
+            c.setFillColor(black)
+            tw = c.stringWidth(stamp_text, "Helvetica-Bold", 16)
+            sx = pw - 24 - tw
+            sy = ph - 28
+            c.drawString(sx, sy, stamp_text)
+            c.setLineWidth(1.4)
+            c.line(sx, sy - 2, sx + tw, sy - 2)
+
+    c.save()
+    try:
+        overlay_reader = PdfReader(overlay_path)
+        orig_page.merge_page(overlay_reader.pages[0])
+        writer = PdfWriter()
+        writer.add_page(orig_page)
+        with open(output_pdf_path, "wb") as f:
+            writer.write(f)
+    finally:
+        if os.path.exists(overlay_path):
+            try:
+                os.remove(overlay_path)
+            except Exception:
+                pass
+
+
+def export_matching_results_to_excel(results: List[Dict[str, Any]], out_path: str) -> Dict[str, Any]:
+    """Generates an Excel report of matched AC numbers and generated PDFs."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "CP139_Matched_Results"
+
+    headers = [
+        "Sr.", "Input AC No.", "Matched Ref# in CP139 (Last figure omitted)",
+        "Para Sr. No.", "Status", "Page No.", "Grand Total", "Posting Status",
+        "Source Report", "Generated PDF File"
+    ]
+
+    hdr_font = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+    hdr_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    border_thin = Border(
+        left=Side(style="thin", color="D3D3D3"),
+        right=Side(style="thin", color="D3D3D3"),
+        top=Side(style="thin", color="D3D3D3"),
+        bottom=Side(style="thin", color="D3D3D3")
+    )
+    fill_found = PatternFill(start_color="E2F0D9", end_color="E2F0D9", fill_type="solid")
+    fill_not_found = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+    font_data = Font(name="Segoe UI", size=10)
+
+    for col_idx, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=h)
+        cell.font = hdr_font
+        cell.fill = hdr_fill
+        cell.alignment = hdr_align
+        cell.border = border_thin
+    ws.row_dimensions[1].height = 28
+
+    found_count = 0
+    not_found_count = 0
+    total_amount = 0.0
+
+    for row_idx, r in enumerate(results, 2):
+        ws.row_dimensions[row_idx].height = 20
+        status = r.get("status", "Not Found")
+        is_found = (status == "Found")
+
+        if is_found:
+            found_count += 1
+            total_amount += float(r.get("amount", 0.0))
+            row_fill = fill_found
+        else:
+            not_found_count += 1
+            row_fill = fill_not_found
+
+        ref_display = r.get("matched_ref", "—")
+        if is_found and r.get("is_omitted"):
+            ref_display = f"{ref_display} (Last figure omitted)"
+
+        row_values = [
+            row_idx - 1,
+            str(r.get("input_ac", "")),
+            ref_display,
+            str(r.get("para_sr", "")),
+            status,
+            r.get("page_num", "—"),
+            r.get("amount", 0.0) if is_found else "—",
+            r.get("posting_status", "—") if is_found else "—",
+            r.get("source_file", "—"),
+            r.get("pdf_file", "—")
+        ]
+
+        for col_idx, val in enumerate(row_values, 1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+            cell.font = font_data
+            cell.border = border_thin
+            cell.fill = row_fill
+
+            if col_idx in (1, 4, 5, 6, 8):
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            elif col_idx in (2, 3):
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            elif col_idx == 7:
+                cell.alignment = Alignment(horizontal="right", vertical="center")
+                if is_found:
+                    cell.number_format = "#,##0.00"
+            else:
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+
+    col_widths = [8, 20, 38, 15, 14, 12, 16, 16, 30, 35]
+    for col_idx, w in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = w
+
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+    wb.save(out_path)
+
+    return {
+        "total": len(results),
+        "found": found_count,
+        "not_found": not_found_count,
+        "total_amount": total_amount,
+        "saved_path": out_path
+    }
+
+
 class CP139Worker(QThread):
-    """Background worker for parsing CP-139 posting files without freezing the GUI."""
+    """Background worker for parsing CP-139 posting files and generating PDFs."""
     log = Signal(str)
     progress = Signal(int, int, str)
     done = Signal(str, dict, list)
@@ -398,7 +782,12 @@ class CP139Worker(QThread):
         deduplicate: bool = True,
         dedup_mode: str = "prefer_posted",
         status_filter: str = "all",
-        include_source_file: bool = False
+        include_source_file: bool = False,
+        make_pdfs: bool = False,
+        excel_input_path: str = "",
+        pdf_output_path: str = "",
+        single_pdf: bool = True,
+        stamp_para: bool = True
     ):
         super().__init__()
         self.file_paths = file_paths
@@ -407,81 +796,262 @@ class CP139Worker(QThread):
         self.dedup_mode = dedup_mode
         self.status_filter = status_filter
         self.include_source_file = include_source_file
+        self.make_pdfs = make_pdfs
+        self.excel_input_path = excel_input_path
+        self.pdf_output_path = pdf_output_path
+        self.single_pdf = single_pdf
+        self.stamp_para = stamp_para
 
     def run(self):
         try:
-            total_files = len(self.file_paths)
-            self.log.emit(f"🚀 Starting CP-139 extraction across {total_files} file(s)...")
-
-            all_records = []
-            for idx, fp in enumerate(self.file_paths, start=1):
-                if self.isInterruptionRequested():
-                    self.log.emit("⏹ Operation cancelled by user.")
-                    return
-
-                fname = os.path.basename(fp)
-                self.progress.emit(idx, total_files, f"Parsing {fname} ({idx}/{total_files})...")
-                self.log.emit(f"📄 Reading: {fname}")
-                recs = parse_cp139_file(fp)
-                self.log.emit(f"   ↳ Extracted {len(recs)} posting record(s) from {fname}")
-                all_records.extend(recs)
-
-            total_raw = len(all_records)
-            self.log.emit(f"\n📊 Total raw records extracted: {total_raw}")
-
-            # Deduplication
-            dups_count = 0
-            if self.deduplicate:
-                self.log.emit(f"🔍 Applying deduplication (Mode: {self.dedup_mode})...")
-                all_records, dups_count = deduplicate_records(all_records, mode=self.dedup_mode)
-                self.log.emit(f"   ↳ Retained {len(all_records)} unique records ({dups_count} duplicates removed).")
-
-            # Status filtering
-            if self.status_filter != "all":
-                self.log.emit(f"🔍 Applying status filter ({self.status_filter})...")
-                all_records = filter_records(all_records, self.status_filter)
-                self.log.emit(f"   ↳ Retained {len(all_records)} records matching filter.")
-
-            if not all_records:
-                raise ValueError("No records found to export from the selected file(s).")
-
-            # Export to Excel
-            self.log.emit(f"\n💾 Generating structured Excel report: {self.output_path}...")
-            stats = export_cp139_to_excel(
-                all_records,
-                self.output_path,
-                include_source_file=self.include_source_file
-            )
-            stats["duplicates_removed"] = dups_count
-            stats["raw_total"] = total_raw
-
-            self.log.emit(f"✔ Export completed successfully!")
-            self.log.emit(f"   • Total records in Excel: {stats['total']}")
-            self.log.emit(f"   • Posted: {stats['posted']}")
-            self.log.emit(f"   • Not Pos: {stats['not_pos']}")
-            self.log.emit(f"   • Grand Total Sum: Rs. {stats['total_amount']:,.2f}")
-            self.log.emit(f"   • Output file: {self.output_path}")
-
-            self.done.emit(self.output_path, stats, all_records)
+            if self.make_pdfs:
+                self._run_make_pdfs()
+            else:
+                self._run_standard_extraction()
         except Exception as exc:
             self.failed.emit(str(exc))
 
+    def _run_standard_extraction(self):
+        total_files = len(self.file_paths)
+        self.log.emit(f"🚀 Starting CP-139 extraction across {total_files} file(s)...")
+
+        all_records = []
+        for idx, fp in enumerate(self.file_paths, start=1):
+            if self.isInterruptionRequested():
+                self.log.emit("⏹ Operation cancelled by user.")
+                return
+
+            fname = os.path.basename(fp)
+            self.progress.emit(idx, total_files, f"Parsing {fname} ({idx}/{total_files})...")
+            self.log.emit(f"📄 Reading: {fname}")
+            recs = parse_cp139_file(fp)
+            self.log.emit(f"   ↳ Extracted {len(recs)} posting record(s) from {fname}")
+            all_records.extend(recs)
+
+        total_raw = len(all_records)
+        self.log.emit(f"\n📊 Total raw records extracted: {total_raw}")
+
+        # Deduplication
+        dups_count = 0
+        if self.deduplicate:
+            self.log.emit(f"🔍 Applying deduplication (Mode: {self.dedup_mode})...")
+            all_records, dups_count = deduplicate_records(all_records, mode=self.dedup_mode)
+            self.log.emit(f"   ↳ Retained {len(all_records)} unique records ({dups_count} duplicates removed).")
+
+        # Status filtering
+        if self.status_filter != "all":
+            self.log.emit(f"🔍 Applying status filter ({self.status_filter})...")
+            all_records = filter_records(all_records, self.status_filter)
+            self.log.emit(f"   ↳ Retained {len(all_records)} records matching filter.")
+
+        if not all_records:
+            raise ValueError("No records found to export from the selected file(s).")
+
+        # Export to Excel
+        self.log.emit(f"\n💾 Generating structured Excel report: {self.output_path}...")
+        stats = export_cp139_to_excel(
+            all_records,
+            self.output_path,
+            include_source_file=self.include_source_file
+        )
+        stats["duplicates_removed"] = dups_count
+        stats["raw_total"] = total_raw
+
+        self.log.emit("✔ Export completed successfully!")
+        self.log.emit(f"   • Total records in Excel: {stats['total']}")
+        self.log.emit(f"   • Posted: {stats['posted']}")
+        self.log.emit(f"   • Not Pos: {stats['not_pos']}")
+        self.log.emit(f"   • Grand Total Sum: Rs. {stats['total_amount']:,.2f}")
+        self.log.emit(f"   • Output file: {self.output_path}")
+
+        self.done.emit(self.output_path, stats, all_records)
+
+    def _run_make_pdfs(self):
+        self.log.emit("🚀 Starting CP-139 Make PDFs & Excel Matching...")
+        if not self.excel_input_path or not os.path.isfile(self.excel_input_path):
+            raise ValueError(f"Excel input file not found: {self.excel_input_path}")
+
+        wb = openpyxl.load_workbook(self.excel_input_path, data_only=True)
+        ws = wb.active
+        excel_items = []
+        for row_i in range(2, ws.max_row + 1):
+            ac_val = ws.cell(row=row_i, column=1).value
+            para_val = ws.cell(row=row_i, column=2).value
+            if ac_val is not None and str(ac_val).strip():
+                excel_items.append({
+                    "row_idx": row_i,
+                    "input_ac": str(ac_val).strip(),
+                    "para_sr": str(para_val).strip() if para_val is not None else ""
+                })
+
+        if not excel_items:
+            raise ValueError("No account numbers found in the selected Excel workbook.")
+
+        self.log.emit(f"   ↳ Loaded {len(excel_items)} account number(s) to search from Excel.")
+
+        all_pages = []
+        total_files = len(self.file_paths)
+        for idx, fp in enumerate(self.file_paths, 1):
+            if self.isInterruptionRequested():
+                return
+            self.progress.emit(idx, total_files, f"Loading pages from {os.path.basename(fp)}...")
+            self.log.emit(f"📖 Loading pages from: {os.path.basename(fp)}")
+            pages = load_cp139_pages(fp)
+            self.log.emit(f"   ↳ Loaded {len(pages)} page(s).")
+            all_pages.extend(pages)
+
+        if not all_pages:
+            raise ValueError("No pages could be loaded from the selected CP-139 file(s).")
+
+        self.log.emit(f"\n🔍 Matching {len(excel_items)} account(s) across {len(all_pages)} report page(s)...")
+
+        matched_results = []
+        page_matches_map = {}
+
+        for idx, item in enumerate(excel_items, 1):
+            if self.isInterruptionRequested():
+                return
+            raw_ac = item["input_ac"]
+            candidates = generate_account_candidates(raw_ac)
+            match = None
+            for p in all_pages:
+                match = find_account_on_page(p, candidates)
+                if match:
+                    break
+
+            if match:
+                omitted_note = " (Last figure omitted in CP139)" if match["is_omitted"] else ""
+                self.log.emit(f"   ✔ Found AC {raw_ac}{omitted_note} on Page {match['page_num']} ({match['source_name']}) -> Ref# {match['matched_cand']}")
+                key = (match["source_path"], match["page_num"])
+                if key not in page_matches_map:
+                    target_p = next((p for p in all_pages if p["source_path"] == match["source_path"] and p["page_num"] == match["page_num"]), None)
+                    page_matches_map[key] = {
+                        "page": target_p,
+                        "matches": [],
+                        "para_stamps": []
+                    }
+                page_matches_map[key]["matches"].append(match)
+                if item["para_sr"] and item["para_sr"] not in page_matches_map[key]["para_stamps"]:
+                    page_matches_map[key]["para_stamps"].append(item["para_sr"])
+
+                matched_results.append({
+                    "input_ac": raw_ac,
+                    "matched_ref": match["matched_cand"],
+                    "is_omitted": match["is_omitted"],
+                    "para_sr": item["para_sr"],
+                    "status": "Found",
+                    "page_num": match["page_num"],
+                    "amount": match["amount"],
+                    "posting_status": match["status"],
+                    "source_file": match["source_name"],
+                    "pdf_file": ""
+                })
+            else:
+                self.log.emit(f"   ✖ Not Found: AC {raw_ac}")
+                matched_results.append({
+                    "input_ac": raw_ac,
+                    "matched_ref": "—",
+                    "is_omitted": False,
+                    "para_sr": item["para_sr"],
+                    "status": "Not Found",
+                    "page_num": "—",
+                    "amount": 0.0,
+                    "posting_status": "—",
+                    "source_file": "—",
+                    "pdf_file": "—"
+                })
+
+        pdf_out_dir = self.pdf_output_path.strip()
+        if not pdf_out_dir:
+            first_dir = os.path.dirname(self.file_paths[0])
+            pdf_out_dir = os.path.join(first_dir, "CP139_PDF_Output")
+        if pdf_out_dir.lower().endswith(".pdf"):
+            pdf_out_dir = os.path.dirname(pdf_out_dir)
+        os.makedirs(pdf_out_dir, exist_ok=True)
+
+        self.log.emit(f"\n🎨 Rendering {len(page_matches_map)} highlighted PDF page(s)...")
+
+        rendered_temp_pdfs = []
+        for (src_path, p_num), p_data in page_matches_map.items():
+            if self.isInterruptionRequested():
+                return
+            p_obj = p_data["page"]
+            stamps = p_data["para_stamps"]
+            safe_stamp = "_".join(stamps) if stamps else f"Page{p_num}"
+            single_out_name = f"CP139_{Path(src_path).stem}_Page{p_num}_{safe_stamp}.pdf"
+            single_out_path = os.path.join(pdf_out_dir, single_out_name)
+
+            if p_obj["is_pdf"]:
+                render_highlighted_pdf_source_page(p_obj, p_data["matches"], single_out_path, stamp_para=self.stamp_para, para_stamps=stamps)
+            else:
+                render_highlighted_txt_page(p_obj, p_data["matches"], single_out_path, stamp_para=self.stamp_para, para_stamps=stamps)
+
+            rendered_temp_pdfs.append(single_out_path)
+
+            for res in matched_results:
+                if res["status"] == "Found" and res["source_file"] == os.path.basename(src_path) and res["page_num"] == p_num:
+                    res["pdf_file"] = single_out_name
+
+        final_pdf_path = ""
+        if self.single_pdf and rendered_temp_pdfs:
+            self.log.emit("📑 Combining highlighted pages into a Single PDF...")
+            combined_name = f"CP139_Matched_Postings_Combined_{datetime.now().strftime('%d%m%Y_%H%M%S')}.pdf"
+            combined_path = os.path.join(pdf_out_dir, combined_name)
+            writer = PdfWriter()
+            for tmp_p in rendered_temp_pdfs:
+                r = PdfReader(tmp_p)
+                for page in r.pages:
+                    writer.add_page(page)
+            with open(combined_path, "wb") as f:
+                writer.write(f)
+
+            for tmp_p in rendered_temp_pdfs:
+                try:
+                    os.remove(tmp_p)
+                except Exception:
+                    pass
+
+            final_pdf_path = combined_path
+            for res in matched_results:
+                if res["status"] == "Found":
+                    res["pdf_file"] = combined_name
+            self.log.emit(f"✔ Single PDF generated successfully: {combined_name}")
+        elif rendered_temp_pdfs:
+            final_pdf_path = rendered_temp_pdfs[0]
+
+        self.log.emit(f"\n💾 Generating matching results Excel: {self.output_path}...")
+        stats = export_matching_results_to_excel(matched_results, self.output_path)
+        stats["pdf_path"] = final_pdf_path or pdf_out_dir
+        stats["pdf_count"] = len(page_matches_map)
+
+        self.log.emit("✔ Make PDFs & Excel matching complete!")
+        self.log.emit(f"   • Total ACs processed: {stats['total']}")
+        self.log.emit(f"   • Found: {stats['found']}")
+        self.log.emit(f"   • Not Found: {stats['not_found']}")
+        self.log.emit(f"   • Grand Total Sum: Rs. {stats['total_amount']:,.2f}")
+        self.log.emit(f"   • Output Excel: {self.output_path}")
+        if final_pdf_path:
+            self.log.emit(f"   • Output PDF: {final_pdf_path}")
+
+        self.done.emit(self.output_path, stats, matched_results)
+
 
 class CP139PostingCheckerPanel(QWidget):
-    """UI Panel for CP-139 Posting Checker in PITC Suite."""
+    """UI Panel for CP 139 Posting check/Make PDF in PITC Suite."""
     def __init__(self):
         super().__init__()
         self.worker = None
         self.file_paths = []
         self.last_output = ""
+        self.last_pdf = ""
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
 
         # Header Title and Description
-        layout.addWidget(lbl("CP 139 Posting Checker", bold=True, color="#7eb8f7"))
+        layout.addWidget(lbl("CP 139 Posting check/Make PDF", bold=True, color="#7eb8f7"))
         layout.addWidget(lbl(
-            "Extract Ref#, S/Div, Grand Total, and Posting Status from WAPDA RCP-139 reports into structured Excel.",
+            "Extract Ref#, S/Div, Grand Total, match against Excel AC numbers, highlight records, and generate PDF pages.",
             color="#556"
         ))
         layout.addWidget(hline())
@@ -514,12 +1084,67 @@ class CP139PostingCheckerPanel(QWidget):
         form_in.addLayout(btn_row)
         layout.addWidget(group_in)
 
+        # PDF Generation & Excel Matching Group
+        group_pdf = QGroupBox("PDF Generation & Excel Matching")
+        form_pdf = QVBoxLayout(group_pdf)
+
+        chk_row = QHBoxLayout()
+        self.make_pdf_chk = QCheckBox("Make PDFs")
+        self.make_pdf_chk.setChecked(False)
+        self.make_pdf_chk.toggled.connect(self._on_make_pdf_toggled)
+        chk_row.addWidget(self.make_pdf_chk)
+
+        self.single_pdf_chk = QCheckBox("Single PDF")
+        self.single_pdf_chk.setChecked(True)
+        self.single_pdf_chk.setEnabled(False)
+        chk_row.addWidget(self.single_pdf_chk)
+
+        self.stamp_para_chk = QCheckBox("Para No Stamped")
+        self.stamp_para_chk.setChecked(True)
+        self.stamp_para_chk.setEnabled(False)
+        chk_row.addWidget(self.stamp_para_chk)
+        chk_row.addStretch()
+        form_pdf.addLayout(chk_row)
+
+        excel_row = QHBoxLayout()
+        excel_row.addWidget(QLabel("Excel input (.xlsx):"))
+        self.excel_in_ed = QLineEdit()
+        self.excel_in_ed.setPlaceholderText("Select Excel workbook containing Col A: AC No., Col B: Para Sr. No.")
+        self.excel_in_ed.setEnabled(False)
+        excel_row.addWidget(self.excel_in_ed, 1)
+
+        self.browse_excel_btn = QPushButton("📄 Browse Excel...")
+        self.browse_excel_btn.setEnabled(False)
+        self.browse_excel_btn.clicked.connect(self._browse_excel)
+        excel_row.addWidget(self.browse_excel_btn)
+
+        self.download_tmpl_btn = QPushButton("📥 Download Template")
+        self.download_tmpl_btn.setEnabled(False)
+        self.download_tmpl_btn.clicked.connect(self._download_template)
+        excel_row.addWidget(self.download_tmpl_btn)
+        form_pdf.addLayout(excel_row)
+
+        pdf_out_row = QHBoxLayout()
+        pdf_out_row.addWidget(QLabel("Output PDF folder / file:"))
+        self.pdf_out_ed = QLineEdit()
+        self.pdf_out_ed.setPlaceholderText("Auto-generated folder 'CP139_PDF_Output' alongside source files if left blank")
+        self.pdf_out_ed.setEnabled(False)
+        pdf_out_row.addWidget(self.pdf_out_ed, 1)
+
+        self.browse_pdf_out_btn = QPushButton("📁 Browse Folder...")
+        self.browse_pdf_out_btn.setEnabled(False)
+        self.browse_pdf_out_btn.clicked.connect(self._browse_pdf_out)
+        pdf_out_row.addWidget(self.browse_pdf_out_btn)
+        form_pdf.addLayout(pdf_out_row)
+
+        layout.addWidget(group_pdf)
+
         # Output & Options Group
         group_out = QGroupBox("Output Settings & Processing Options")
         form_out = QVBoxLayout(group_out)
 
         out_row = QHBoxLayout()
-        out_row.addWidget(QLabel("Output destination:"))
+        out_row.addWidget(QLabel("Output Excel destination:"))
         self.out_ed = QLineEdit()
         self.out_ed.setPlaceholderText("Auto-generated alongside source files if left blank")
         out_row.addWidget(self.out_ed, 1)
@@ -533,7 +1158,6 @@ class CP139PostingCheckerPanel(QWidget):
         out_row.addWidget(browse_folder_btn)
         form_out.addLayout(out_row)
 
-        # Deduplication row
         dedup_row = QHBoxLayout()
         self.single_chk = QCheckBox("Single Postings only")
         self.single_chk.setChecked(False)
@@ -550,7 +1174,6 @@ class CP139PostingCheckerPanel(QWidget):
         dedup_row.addStretch()
         form_out.addLayout(dedup_row)
 
-        # Status and extra filters row
         filter_row = QHBoxLayout()
         filter_row.addWidget(QLabel("Status Filter:"))
         self.status_filter_cb = QComboBox()
@@ -583,6 +1206,11 @@ class CP139PostingCheckerPanel(QWidget):
         self.open_excel_btn.clicked.connect(self._open_excel)
         actions.addWidget(self.open_excel_btn)
 
+        self.open_pdf_btn = QPushButton("📑 Open PDF")
+        self.open_pdf_btn.setEnabled(False)
+        self.open_pdf_btn.clicked.connect(self._open_pdf)
+        actions.addWidget(self.open_pdf_btn)
+
         self.open_folder_btn = QPushButton("📂 Open Folder")
         self.open_folder_btn.setEnabled(False)
         self.open_folder_btn.clicked.connect(self._open_folder)
@@ -600,6 +1228,20 @@ class CP139PostingCheckerPanel(QWidget):
         self.log_box.setReadOnly(True)
         self.log_box.setMinimumHeight(130)
         layout.addWidget(self.log_box)
+
+    def _on_make_pdf_toggled(self, checked: bool):
+        self.single_pdf_chk.setEnabled(checked)
+        self.stamp_para_chk.setEnabled(checked)
+        self.excel_in_ed.setEnabled(checked)
+        self.browse_excel_btn.setEnabled(checked)
+        self.download_tmpl_btn.setEnabled(checked)
+        self.pdf_out_ed.setEnabled(checked)
+        self.browse_pdf_out_btn.setEnabled(checked)
+
+        if checked:
+            if not self.pdf_out_ed.text().strip() and self.file_paths:
+                first_dir = os.path.dirname(self.file_paths[0])
+                self.pdf_out_ed.setText(os.path.normpath(os.path.join(first_dir, "CP139_PDF_Output")))
 
     def _on_dedup_toggled(self, checked: bool):
         self.dedup_mode.setEnabled(checked)
@@ -642,17 +1284,51 @@ class CP139PostingCheckerPanel(QWidget):
         self.file_list.clear()
         self.out_ed.clear()
         self.open_excel_btn.setEnabled(False)
+        self.open_pdf_btn.setEnabled(False)
         self.open_folder_btn.setEnabled(False)
         self.status.setText("Status: Cleared all files.")
 
     def _update_default_output(self):
-        if self.file_paths and not self.out_ed.text().strip():
+        if self.file_paths:
             first_dir = os.path.dirname(self.file_paths[0])
             first_base = os.path.splitext(os.path.basename(self.file_paths[0]))[0]
             date_str = datetime.now().strftime("%d%m%Y")
-            self.out_ed.setText(os.path.normpath(os.path.join(first_dir, f"{first_base}_Results_{date_str}.xlsx")))
+            if not self.out_ed.text().strip():
+                self.out_ed.setText(os.path.normpath(os.path.join(first_dir, f"{first_base}_Results_{date_str}.xlsx")))
+            if not self.pdf_out_ed.text().strip():
+                self.pdf_out_ed.setText(os.path.normpath(os.path.join(first_dir, "CP139_PDF_Output")))
         if len(self.file_paths) > 1:
             self.file_chk.setChecked(True)
+
+    def _browse_excel(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Excel Input File",
+            "",
+            "Excel Files (*.xlsx *.xls);;All Files (*.*)"
+        )
+        if path:
+            self.excel_in_ed.setText(os.path.normpath(path))
+
+    def _download_template(self):
+        curr_dir = os.path.dirname(self.file_paths[0]) if self.file_paths else ""
+        default_file = os.path.join(curr_dir, "CP139_Posting_Template.xlsx") if curr_dir else "CP139_Posting_Template.xlsx"
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Posting Template As",
+            default_file,
+            "Excel Workbook (*.xlsx);;All files (*.*)"
+        )
+        if path:
+            if not path.lower().endswith(".xlsx"):
+                path += ".xlsx"
+            download_cp139_template(path)
+            notify(self, "Template Saved", f"CP-139 template saved to:\n{path}", file_path=path)
+
+    def _browse_pdf_out(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Output PDF Folder")
+        if folder:
+            self.pdf_out_ed.setText(os.path.normpath(folder))
 
     def _browse_file(self):
         curr = self.out_ed.text().strip()
@@ -675,6 +1351,13 @@ class CP139PostingCheckerPanel(QWidget):
             QMessageBox.warning(self, "No Files", "Please add at least one CP-139 report file (.txt or .pdf).")
             return
 
+        is_make_pdf = self.make_pdf_chk.isChecked()
+        if is_make_pdf:
+            excel_in = self.excel_in_ed.text().strip()
+            if not excel_in or not os.path.isfile(excel_in):
+                QMessageBox.warning(self, "Missing Excel Input", "Please select an existing Excel workbook containing AC numbers to match.")
+                return
+
         out_path = self.out_ed.text().strip()
         if not out_path:
             self._update_default_output()
@@ -685,6 +1368,7 @@ class CP139PostingCheckerPanel(QWidget):
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.open_excel_btn.setEnabled(False)
+        self.open_pdf_btn.setEnabled(False)
         self.open_folder_btn.setEnabled(False)
 
         self.worker = CP139Worker(
@@ -693,7 +1377,12 @@ class CP139PostingCheckerPanel(QWidget):
             deduplicate=self.single_chk.isChecked(),
             dedup_mode=self.dedup_mode.currentData(),
             status_filter=self.status_filter_cb.currentData(),
-            include_source_file=self.file_chk.isChecked()
+            include_source_file=self.file_chk.isChecked(),
+            make_pdfs=is_make_pdf,
+            excel_input_path=self.excel_in_ed.text().strip() if is_make_pdf else "",
+            pdf_output_path=self.pdf_out_ed.text().strip() if is_make_pdf else "",
+            single_pdf=self.single_pdf_chk.isChecked() if is_make_pdf else False,
+            stamp_para=self.stamp_para_chk.isChecked() if is_make_pdf else False
         )
         self.worker.log.connect(self._log)
         self.worker.progress.connect(self._on_progress)
@@ -715,25 +1404,40 @@ class CP139PostingCheckerPanel(QWidget):
 
     def _done(self, saved_path: str, stats: dict, records: list):
         self.last_output = saved_path
+        self.last_pdf = stats.get("pdf_path", "")
         self.status.setText(f"Status: Finished successfully. Output generated at {os.path.basename(saved_path)}")
         self.open_excel_btn.setEnabled(True)
+        if self.last_pdf and os.path.exists(self.last_pdf):
+            self.open_pdf_btn.setEnabled(True)
         self.open_folder_btn.setEnabled(True)
 
-        amt = stats.get("total_amount", 0)
-        msg_body = (
-            f"Processed {len(self.file_paths)} report file(s).\n\n"
-            f"  • Total Records in Report: {stats.get('total', 0)}\n"
-            f"  • Posted: {stats.get('posted', 0)}\n"
-            f"  • Not Posted: {stats.get('not_pos', 0)}\n"
-            f"  • Grand Total Sum: Rs. {amt:,.2f}\n"
-        )
-        if stats.get("duplicates_removed", 0) > 0:
-            msg_body += f"  • Duplicates Removed: {stats.get('duplicates_removed')}\n"
-        msg_body += f"\nExcel file saved to:\n{saved_path}"
+        amt = stats.get("total_amount", 0.0)
+        if self.make_pdf_chk.isChecked():
+            msg_body = (
+                f"CP 139 Make PDFs & Excel Matching Complete!\n\n"
+                f"  • Total ACs Searched: {stats.get('total', 0)}\n"
+                f"  • Found & Highlighted: {stats.get('found', 0)}\n"
+                f"  • Not Found: {stats.get('not_found', 0)}\n"
+                f"  • Grand Total Sum: Rs. {amt:,.2f}\n"
+                f"  • Highlighted Pages: {stats.get('pdf_count', 0)}\n\n"
+                f"Excel Results saved to:\n{saved_path}\n\n"
+                f"PDF output saved to:\n{stats.get('pdf_path', '')}"
+            )
+        else:
+            msg_body = (
+                f"Processed {len(self.file_paths)} report file(s).\n\n"
+                f"  • Total Records in Report: {stats.get('total', 0)}\n"
+                f"  • Posted: {stats.get('posted', 0)}\n"
+                f"  • Not Posted: {stats.get('not_pos', 0)}\n"
+                f"  • Grand Total Sum: Rs. {amt:,.2f}\n"
+            )
+            if stats.get("duplicates_removed", 0) > 0:
+                msg_body += f"  • Duplicates Removed: {stats.get('duplicates_removed')}\n"
+            msg_body += f"\nExcel file saved to:\n{saved_path}"
 
         notify(
             self,
-            "CP 139 Extraction Complete",
+            "CP 139 Completed",
             msg_body,
             file_path=saved_path,
             folder_path=os.path.dirname(saved_path)
@@ -741,11 +1445,15 @@ class CP139PostingCheckerPanel(QWidget):
 
     def _failed(self, error_msg: str):
         self.status.setText("Status: Failed")
-        notify(self, "CP 139 Extraction Error", error_msg, critical=True)
+        notify(self, "CP 139 Error", error_msg, critical=True)
 
     def _open_excel(self):
         if self.last_output and os.path.exists(self.last_output):
             os.startfile(self.last_output)
+
+    def _open_pdf(self):
+        if self.last_pdf and os.path.exists(self.last_pdf):
+            os.startfile(self.last_pdf)
 
     def _open_folder(self):
         if self.last_output:
@@ -770,4 +1478,3 @@ if __name__ == "__main__":
         panel = CP139PostingCheckerPanel()
         panel.show()
         sys.exit(app.exec())
-
