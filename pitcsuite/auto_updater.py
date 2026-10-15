@@ -27,6 +27,10 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.92": [
+        "<b>CP-139 Posting Checker/PDF:</b> Added PDF Generation",
+        "<b>Bill Scrapper:</b> Added FPA and Current Bill fetching"
+    ],
     "v2.8.91": [
         "<b>Brand New Tool — Govt Assessment Realization:</b> Native tool to import WAPDA Assessment & Realization text reports (.txt) and extract structured consumer billing data into professionally styled Excel workbooks matching official templates.",
         "<b>Exact 12-Column Extraction:</b> Accurately extracts Ref No, Batch No, Sub Div, Cons Name, Month, Triff, Reading, Assessed Amount, Total Amount, Realized Amount, Balance Amount, and Status (Disconnected/Running).",
@@ -85,7 +89,7 @@ def get_current_version() -> str:
         import pitcsuite
         return f"v{pitcsuite.__version__.lstrip('vV')}"
     except Exception:
-        return "v2.8.91"
+        return "v2.8.92"
 
 
 def get_release_notes(ver: str) -> List[str]:
@@ -96,7 +100,7 @@ def get_release_notes(ver: str) -> List[str]:
     with_v = f"v{clean_ver.lstrip('vV')}"
     if with_v in DEFAULT_RELEASE_NOTES:
         return DEFAULT_RELEASE_NOTES[with_v]
-    return DEFAULT_RELEASE_NOTES.get("v2.8.91", [])
+    return DEFAULT_RELEASE_NOTES.get("v2.8.92", [])
 
 
 def parse_version_response(raw_text: str) -> Tuple[str, List[str]]:

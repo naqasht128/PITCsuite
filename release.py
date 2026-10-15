@@ -28,6 +28,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 
 ROOT_DIR = Path(__file__).resolve().parent
 INIT_PY = ROOT_DIR / "pitcsuite" / "__init__.py"

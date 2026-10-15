@@ -6,14 +6,16 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release tag name (e.g. v2.8.92) - leave blank to only build artifacts'
+        description: 'Release tag name (e.g. v2.8.92)'
         required: false
         default: ''
 
 jobs:
-  build-windows:
-    name: Build Windows (.exe & Setup.exe)
+  build-and-release:
+    name: Build Windows (.exe & Setup.exe) & Publish Release
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -33,7 +35,8 @@ jobs:
 
       - name: Compile Inno Setup Installer
         run: |
-          $ver = "${{ github.ref_type == 'tag' && github.ref_name || '2.8.91' }}".TrimStart("v")
+          $ver = "${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.tag_name || '2.8.92' }}".TrimStart("v")
+          if (-not $ver) { $ver = "2.8.92" }
           $isccCmd = Get-Command iscc -ErrorAction SilentlyContinue
           if ($isccCmd) {
               $isccPath = $isccCmd.Source
@@ -57,32 +60,13 @@ jobs:
           name: PITCSuite-Standalone-exe
           path: dist/pitcsuite.exe
 
-  release:
-    name: Publish GitHub Release
-    needs: [build-windows]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name != '')
-    permissions:
-      contents: write
-    steps:
-      - name: Download Setup Installer Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: PITCSuite-Windows-Setup
-          path: release-assets/
-
-      - name: Download Standalone .exe Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: PITCSuite-Standalone-exe
-          path: release-assets/
-
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name != '')
         with:
           files: |
-            release-assets/PITCSuite_Setup.exe
-            release-assets/pitcsuite.exe
+            dist/PITCSuite_Setup.exe
+            dist/pitcsuite.exe
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.tag_name }}
           name: PITC Suite Release ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.tag_name }}
           generate_release_notes: true
