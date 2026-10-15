@@ -17,9 +17,10 @@ app.use(cors());
 app.use(express.json());
 
 // Initialize Supabase Client
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const ADMIN_SECRET = process.env.ADMIN_SECRET;
+const rawUrl = (process.env.SUPABASE_URL || '').trim();
+const SUPABASE_URL = rawUrl.replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '');
+const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+const ADMIN_SECRET = (process.env.ADMIN_SECRET || '').trim();
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.warn('WARNING: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set. Database operations will fail until configured.');
