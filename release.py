@@ -128,7 +128,12 @@ def update_version_files(new_version: str):
 def verify_python_syntax():
     """Compiles all Python files in the repository to guarantee no syntax errors."""
     print("  Checking syntax of Python files...")
-    py_files = [ROOT_DIR / "pitcsuite.py", ROOT_DIR / "generate_key.py", ROOT_DIR / "release.py"]
+    py_files = [
+        ROOT_DIR / "pitcsuite.py",
+        ROOT_DIR / "generate_key.py",
+        ROOT_DIR / "release.py",
+        ROOT_DIR / "scripts" / "compile_nuitka.py"
+    ]
     for p in (ROOT_DIR / "pitcsuite").rglob("*.py"):
         py_files.append(p)
 

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release tag name (e.g. v2.8.92)'
+        description: 'Release tag name (e.g. v2.8.93)'
         required: false
         default: ''
 
@@ -28,15 +28,19 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          pip install -r requirements.txt pyinstaller nuitka
+
+      - name: Compile Proprietary Modules with Nuitka (C++ Binary Protection)
+        run: |
+          python scripts/compile_nuitka.py
 
       - name: Build Executable with PyInstaller
         run: pyinstaller pitcsuite.spec --clean
 
       - name: Compile Inno Setup Installer
         run: |
-          $ver = "${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.tag_name || '2.8.92' }}".TrimStart("v")
-          if (-not $ver) { $ver = "2.8.92" }
+          $ver = "${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.tag_name || '2.8.93' }}".TrimStart("v")
+          if (-not $ver) { $ver = "2.8.93" }
           $isccCmd = Get-Command iscc -ErrorAction SilentlyContinue
           if ($isccCmd) {
               $isccPath = $isccCmd.Source

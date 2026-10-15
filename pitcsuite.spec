@@ -1,4 +1,4 @@
-# -*- mode: python ; coding: utf-8 -*-
+import os, glob
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 hidden_imports = ['openpyxl', 'pypdf', 'fitz', 'pdfplumber', 'pyotp', 'PIL', 'pandas', 'pyautogui', 'requests', 'urllib3', 'reportlab']
@@ -6,10 +6,16 @@ hidden_imports += collect_submodules('selenium')
 hidden_imports += collect_submodules('webdriver_manager')
 hidden_imports += collect_submodules('reportlab')
 
+# Automatically bundle compiled C++ .pyd binaries from Nuitka if present
+compiled_binaries = []
+for pyd_path in glob.glob('pitcsuite/**/*.pyd', recursive=True):
+    rel_folder = os.path.dirname(pyd_path)
+    compiled_binaries.append((pyd_path, rel_folder))
+
 a = Analysis(
     ['pitcsuite.py'],
     pathex=[],
-    binaries=[],
+    binaries=compiled_binaries,
     datas=[('pitcsuite\\assets', 'pitcsuite\\assets')],
     hiddenimports=hidden_imports,
     hookspath=[],
