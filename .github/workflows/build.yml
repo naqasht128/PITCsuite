@@ -30,7 +30,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller nuitka
 
+      - name: Set up MSVC Environment
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Compile Proprietary Modules with Nuitka (C++ Binary Protection)
+        env:
+          PYTHONIOENCODING: "utf-8"
         run: |
           python scripts/compile_nuitka.py
 

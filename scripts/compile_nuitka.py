@@ -11,6 +11,14 @@ import glob
 import subprocess
 from pathlib import Path
 
+# Ensure UTF-8 stdout/stderr on Windows to prevent UnicodeEncodeError
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 ROOT_DIR = Path(__file__).resolve().parent.parent
 PITCSUITE_DIR = ROOT_DIR / "pitcsuite"
 TOOLS_DIR = PITCSUITE_DIR / "tools"
@@ -43,12 +51,12 @@ def get_target_files():
 
 def compile_with_nuitka():
     if os.environ.get("SKIP_NUITKA") == "1":
-        print("ℹ SKIP_NUITKA=1 detected. Skipping Nuitka compilation and using standard source files.")
+        print("[INFO] SKIP_NUITKA=1 detected. Skipping Nuitka compilation and using standard source files.")
         return
 
     targets = get_target_files()
     print("=" * 60)
-    print(f"🔒 NUITKA COMPILER: Securing {len(targets)} Python modules to native C++ (.pyd)")
+    print(f"[SECURE] NUITKA COMPILER: Securing {len(targets)} Python modules to native C++ (.pyd)")
     print("=" * 60)
 
     success_count = 0
@@ -59,7 +67,6 @@ def compile_with_nuitka():
         cmd = [
             sys.executable, "-m", "nuitka",
             "--module",
-            "--enable-plugin=pyside6",
             "--assume-yes-for-downloads",
             f"--output-dir={str(target.parent)}",
             "--remove-output",
@@ -69,7 +76,7 @@ def compile_with_nuitka():
 
         result = subprocess.run(cmd, cwd=str(ROOT_DIR))
         if result.returncode != 0:
-            print(f"❌ Failed to compile {rel_path} with Nuitka (exit code {result.returncode})")
+            print(f"[ERROR] Failed to compile {rel_path} with Nuitka (exit code {result.returncode})")
             sys.exit(result.returncode)
 
         # Find the generated .pyd file
@@ -78,18 +85,18 @@ def compile_with_nuitka():
         pyd_matches = list(parent_dir.glob(f"{stem}*.pyd"))
 
         if not pyd_matches:
-            print(f"❌ Error: Compiled .pyd for {stem} not found in {parent_dir}")
+            print(f"[ERROR] Compiled .pyd for {stem} not found in {parent_dir}")
             sys.exit(1)
 
-        print(f"  ✔ Generated native C++ binary: {pyd_matches[0].name}")
+        print(f"  [OK] Generated native C++ binary: {pyd_matches[0].name}")
 
         # Remove the original .py file so only .pyd is packaged by PyInstaller
         target.unlink()
-        print(f"  ✔ Removed original source file: {target.name}")
+        print(f"  [OK] Removed original source file: {target.name}")
         success_count += 1
 
     print("\n" + "=" * 60)
-    print(f"🎉 NUITKA COMPILATION COMPLETED: {success_count}/{len(targets)} modules secured!")
+    print(f"[DONE] NUITKA COMPILATION COMPLETED: {success_count}/{len(targets)} modules secured!")
     print("=" * 60 + "\n")
 
 
