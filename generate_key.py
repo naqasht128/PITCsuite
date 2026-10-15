@@ -110,7 +110,7 @@ def generate_key_api(api_url: str, admin_secret: str, plan_type: str) -> dict:
         raise RuntimeError(f"Request failed: {str(e)}")
 
 
-class KeyGeneratorGUI(tk.Tk):
+class AdminConsoleGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("PITC Suite — Admin Serial Key Generator")
@@ -402,7 +402,7 @@ def main():
     if args.cli or args.plan:
         run_cli(args)
     else:
-        app = KeyGeneratorGUI()
+        app = AdminConsoleGUI()
         app.mainloop()
 
 
