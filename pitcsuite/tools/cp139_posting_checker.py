@@ -399,7 +399,7 @@ def download_cp139_template(save_path: str) -> None:
     ws = wb.active
     ws.title = "Template"
 
-    headers = ["AC No.", "Para Sr. No."]
+    headers = ["AC No.", "Para Sr. No.", "Remarks"]
     hdr_font = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
     hdr_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
     hdr_align = Alignment(horizontal="center", vertical="center")
@@ -432,11 +432,12 @@ def download_cp139_template(save_path: str) -> None:
         c1.border = thin_border
         c2.border = thin_border
 
-    note_cell = ws.cell(row=7, column=1, value="Note: Enter the complete 14-digit Account Numbers in Col A and corresponding Para Sr. Nos in Col B.")
+    note_cell = ws.cell(row=7, column=1, value="Note: Enter the complete 14-digit Account Numbers in Col A and corresponding Para Sr. Nos in Col B. Remarks in Col C will be updated automatically.")
     note_cell.font = Font(name="Segoe UI", size=9, italic=True, color="555555")
 
     ws.column_dimensions["A"].width = 25
     ws.column_dimensions["B"].width = 18
+    ws.column_dimensions["C"].width = 25
 
     os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
     wb.save(save_path)
@@ -588,10 +589,14 @@ def render_highlighted_txt_page(
         c.drawString(margin_x, y, line)
 
     if stamp_para and para_stamps:
-        stamp_text = ", ".join(s for s in para_stamps if s)
-        if stamp_text:
-            if not stamp_text.lower().startswith("para"):
-                stamp_text = f"Para {stamp_text}"
+        stamp_vals = [str(s).strip() for s in para_stamps if s and str(s).strip()]
+        if stamp_vals:
+            cleaned_stamps = []
+            for s in stamp_vals:
+                cleaned = re.sub(r'^(?:para\s*(?:sr\.?\s*(?:no\.?)?)?\s*:?\s*)', '', s, flags=re.IGNORECASE).strip()
+                cleaned_stamps.append(cleaned if cleaned else s)
+            joined_vals = ", ".join(cleaned_stamps)
+            stamp_text = f"Para Sr. No. {joined_vals}"
             c.setFont("Helvetica-Bold", 16)
             c.setFillColor(black)
             tw = c.stringWidth(stamp_text, "Helvetica-Bold", 16)
@@ -620,10 +625,14 @@ def render_highlighted_pdf_source_page(
     c = canvas.Canvas(overlay_path, pagesize=(pw, ph))
 
     if stamp_para and para_stamps:
-        stamp_text = ", ".join(s for s in para_stamps if s)
-        if stamp_text:
-            if not stamp_text.lower().startswith("para"):
-                stamp_text = f"Para {stamp_text}"
+        stamp_vals = [str(s).strip() for s in para_stamps if s and str(s).strip()]
+        if stamp_vals:
+            cleaned_stamps = []
+            for s in stamp_vals:
+                cleaned = re.sub(r'^(?:para\s*(?:sr\.?\s*(?:no\.?)?)?\s*:?\s*)', '', s, flags=re.IGNORECASE).strip()
+                cleaned_stamps.append(cleaned if cleaned else s)
+            joined_vals = ", ".join(cleaned_stamps)
+            stamp_text = f"Para Sr. No. {joined_vals}"
             c.setFont("Helvetica-Bold", 16)
             c.setFillColor(black)
             tw = c.stringWidth(stamp_text, "Helvetica-Bold", 16)
@@ -765,8 +774,8 @@ class CP139Worker(QThread):
         include_source_file: bool = False,
         make_pdfs: bool = False,
         excel_input_path: str = "",
-        pdf_output_path: str = "",
         single_pdf: bool = True,
+        separate_pdfs: bool = False,
         stamp_para: bool = True
     ):
         super().__init__()
@@ -778,8 +787,8 @@ class CP139Worker(QThread):
         self.include_source_file = include_source_file
         self.make_pdfs = make_pdfs
         self.excel_input_path = excel_input_path
-        self.pdf_output_path = pdf_output_path
         self.single_pdf = single_pdf
+        self.separate_pdfs = separate_pdfs
         self.stamp_para = stamp_para
 
     def run(self):
@@ -827,41 +836,59 @@ class CP139Worker(QThread):
         if not all_records:
             raise ValueError("No records found to export from the selected file(s).")
 
+        # Resolve output destination folder and file
+        if os.path.isdir(self.output_path) or not self.output_path.lower().endswith(".xlsx"):
+            out_folder = self.output_path
+            first_base = os.path.splitext(os.path.basename(self.file_paths[0]))[0] if self.file_paths else "CP139"
+            date_str = datetime.now().strftime("%d%m%Y")
+            excel_out_path = os.path.join(out_folder, f"{first_base}_Results_{date_str}.xlsx")
+        else:
+            excel_out_path = self.output_path
+            out_folder = os.path.dirname(self.output_path)
+        os.makedirs(out_folder, exist_ok=True)
+
         # Export to Excel
-        self.log.emit(f"\n💾 Generating structured Excel report: {self.output_path}...")
+        self.log.emit(f"\n💾 Generating structured Excel report: {excel_out_path}...")
         stats = export_cp139_to_excel(
             all_records,
-            self.output_path,
+            excel_out_path,
             include_source_file=self.include_source_file
         )
         stats["duplicates_removed"] = dups_count
         stats["raw_total"] = total_raw
+        stats["output_dir"] = out_folder
+        stats["excel_path"] = excel_out_path
 
         self.log.emit("✔ Export completed successfully!")
         self.log.emit(f"   • Total records in Excel: {stats['total']}")
         self.log.emit(f"   • Posted: {stats['posted']}")
         self.log.emit(f"   • Not Pos: {stats['not_pos']}")
         self.log.emit(f"   • Grand Total Sum: Rs. {stats['total_amount']:,.2f}")
-        self.log.emit(f"   • Output file: {self.output_path}")
+        self.log.emit(f"   • Output Folder: {out_folder}")
+        self.log.emit(f"   • Output Excel: {os.path.basename(excel_out_path)}")
 
-        self.done.emit(self.output_path, stats, all_records)
+        self.done.emit(excel_out_path, stats, all_records)
 
     def _run_make_pdfs(self):
         self.log.emit("🚀 Starting CP-139 Make PDFs & Excel Matching...")
         if not self.excel_input_path or not os.path.isfile(self.excel_input_path):
             raise ValueError(f"Excel input file not found: {self.excel_input_path}")
 
-        wb = openpyxl.load_workbook(self.excel_input_path, data_only=True)
+        wb = openpyxl.load_workbook(self.excel_input_path)
         ws = wb.active
         excel_items = []
         for row_i in range(2, ws.max_row + 1):
             ac_val = ws.cell(row=row_i, column=1).value
             para_val = ws.cell(row=row_i, column=2).value
             if ac_val is not None and str(ac_val).strip():
+                val_str = str(ac_val).strip()
+                if val_str.lower().startswith("note:"):
+                    continue
                 excel_items.append({
                     "row_idx": row_i,
-                    "input_ac": str(ac_val).strip(),
-                    "para_sr": str(para_val).strip() if para_val is not None else ""
+                    "input_ac": val_str,
+                    "para_sr": str(para_val).strip() if para_val is not None else "",
+                    "remark": "AC No Not found"
                 })
 
         if not excel_items:
@@ -900,6 +927,7 @@ class CP139Worker(QThread):
                     break
 
             if match:
+                item["remark"] = "Found and PDF made"
                 self.log.emit(f"   ✔ Found AC {raw_ac} on Page {match['page_num']} ({match['source_name']}) -> Ref# {match['matched_cand']}")
                 key = (match["source_path"], match["page_num"])
                 if key not in page_matches_map:
@@ -909,6 +937,8 @@ class CP139Worker(QThread):
                         "matches": [],
                         "para_stamps": []
                     }
+                match["input_ac"] = raw_ac
+                match["para_sr"] = item["para_sr"]
                 page_matches_map[key]["matches"].append(match)
                 if item["para_sr"] and item["para_sr"] not in page_matches_map[key]["para_stamps"]:
                     page_matches_map[key]["para_stamps"].append(item["para_sr"])
@@ -925,6 +955,7 @@ class CP139Worker(QThread):
                     "pdf_file": ""
                 })
             else:
+                item["remark"] = "AC No Not found"
                 self.log.emit(f"   ✖ Not Found: AC {raw_ac}")
                 matched_results.append({
                     "input_ac": raw_ac,
@@ -938,12 +969,17 @@ class CP139Worker(QThread):
                     "pdf_file": "—"
                 })
 
-        pdf_out_dir = self.pdf_output_path.strip()
-        if not pdf_out_dir:
-            first_dir = os.path.dirname(self.file_paths[0])
-            pdf_out_dir = os.path.join(first_dir, "CP139_PDF_Output")
-        if pdf_out_dir.lower().endswith(".pdf"):
-            pdf_out_dir = os.path.dirname(pdf_out_dir)
+        # Resolve output destination folder and file
+        if os.path.isdir(self.output_path) or not self.output_path.lower().endswith(".xlsx"):
+            out_folder = self.output_path
+            first_base = os.path.splitext(os.path.basename(self.file_paths[0]))[0] if self.file_paths else "CP139"
+            date_str = datetime.now().strftime("%d%m%Y")
+            excel_out_path = os.path.join(out_folder, f"{first_base}_Results_{date_str}.xlsx")
+        else:
+            excel_out_path = self.output_path
+            out_folder = os.path.dirname(self.output_path)
+
+        pdf_out_dir = out_folder
         os.makedirs(pdf_out_dir, exist_ok=True)
 
         self.log.emit(f"\n🎨 Rendering {len(page_matches_map)} highlighted PDF page(s)...")
@@ -954,9 +990,34 @@ class CP139Worker(QThread):
                 return
             p_obj = p_data["page"]
             stamps = p_data["para_stamps"]
-            safe_stamp = "_".join(stamps) if stamps else f"Page{p_num}"
-            single_out_name = f"CP139_{Path(src_path).stem}_Page{p_num}_{safe_stamp}.pdf"
+            matches = p_data["matches"]
+
+            # Naming logic:
+            # In separate pdf output: files name are on AC Nos, and if Para Sr. No. is also checked then File names are on Para Sr. Nos.
+            page_paras = [m.get("para_sr", "").strip() for m in matches if m.get("para_sr", "").strip()]
+            clean_paras = []
+            for p in page_paras:
+                cp = re.sub(r'^(?:para\s*(?:sr\.?\s*(?:no\.?)?)?\s*:?\s*)', '', p, flags=re.IGNORECASE).strip()
+                clean_paras.append(cp if cp else p)
+
+            page_acs = [m.get("input_ac", "").strip() or m.get("matched_cand", "").strip() for m in matches if (m.get("input_ac") or m.get("matched_cand"))]
+
+            if self.stamp_para and clean_paras:
+                base_title = "_".join(dict.fromkeys(clean_paras))
+            elif page_acs:
+                base_title = "_".join(dict.fromkeys(page_acs))
+            else:
+                base_title = f"CP139_{Path(src_path).stem}_Page{p_num}"
+
+            safe_title = re.sub(r'[\\/*?:"<>|]', '_', base_title).strip()
+            single_out_name = f"{safe_title}.pdf"
             single_out_path = os.path.join(pdf_out_dir, single_out_name)
+
+            counter = 1
+            while single_out_path in rendered_temp_pdfs:
+                single_out_name = f"{safe_title}_{counter}.pdf"
+                single_out_path = os.path.join(pdf_out_dir, single_out_name)
+                counter += 1
 
             if p_obj["is_pdf"]:
                 render_highlighted_pdf_source_page(p_obj, p_data["matches"], single_out_path, stamp_para=self.stamp_para, para_stamps=stamps)
@@ -982,22 +1043,66 @@ class CP139Worker(QThread):
             with open(combined_path, "wb") as f:
                 writer.write(f)
 
-            for tmp_p in rendered_temp_pdfs:
-                try:
-                    os.remove(tmp_p)
-                except Exception:
-                    pass
-
             final_pdf_path = combined_path
-            for res in matched_results:
-                if res["status"] == "Found":
-                    res["pdf_file"] = combined_name
             self.log.emit(f"✔ Single PDF generated successfully: {combined_name}")
-        elif rendered_temp_pdfs:
-            final_pdf_path = rendered_temp_pdfs[0]
 
-        self.log.emit(f"\n💾 Generating matching results Excel: {self.output_path}...")
-        stats = export_matching_results_to_excel(matched_results, self.output_path)
+            if not self.separate_pdfs:
+                for tmp_p in rendered_temp_pdfs:
+                    try:
+                        os.remove(tmp_p)
+                    except Exception:
+                        pass
+                for res in matched_results:
+                    if res["status"] == "Found":
+                        res["pdf_file"] = combined_name
+            else:
+                self.log.emit(f"✔ Retained {len(rendered_temp_pdfs)} separate PDF file(s).")
+        elif self.separate_pdfs and rendered_temp_pdfs:
+            final_pdf_path = rendered_temp_pdfs[0]
+            self.log.emit(f"✔ Generated {len(rendered_temp_pdfs)} separate PDF file(s) in: {pdf_out_dir}")
+
+        # Update Column C ('Remarks') in the user's Input Excel workbook
+        self.log.emit(f"\n📝 Updating Remarks in Input Excel: {os.path.basename(self.excel_input_path)}...")
+        try:
+            hdr_cell = ws.cell(row=1, column=3, value="Remarks")
+            hdr_cell.font = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+            hdr_cell.fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+            hdr_cell.alignment = Alignment(horizontal="center", vertical="center")
+            border_thin = Border(
+                left=Side(style="thin", color="D3D3D3"),
+                right=Side(style="thin", color="D3D3D3"),
+                top=Side(style="thin", color="D3D3D3"),
+                bottom=Side(style="thin", color="D3D3D3")
+            )
+            hdr_cell.border = border_thin
+            ws.row_dimensions[1].height = 28
+
+            fill_found = PatternFill(start_color="E2F0D9", end_color="E2F0D9", fill_type="solid")
+            fill_not_found = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+            font_data = Font(name="Segoe UI", size=10)
+
+            for item in excel_items:
+                r_idx = item["row_idx"]
+                c_val = item.get("remark", "AC No Not found")
+                c_cell = ws.cell(row=r_idx, column=3, value=c_val)
+                c_cell.font = font_data
+                c_cell.alignment = Alignment(horizontal="center", vertical="center")
+                c_cell.border = border_thin
+                c_cell.fill = fill_found if c_val == "Found and PDF made" else fill_not_found
+                ws.row_dimensions[r_idx].height = 20
+
+            ws.column_dimensions["C"].width = 25
+            wb.save(self.excel_input_path)
+            self.log.emit(f"✔ Remarks updated in Input Excel (Col C): {os.path.basename(self.excel_input_path)}")
+        except PermissionError:
+            self.log.emit(f"⚠ Notice: Could not write remarks directly into '{os.path.basename(self.excel_input_path)}' because the file is open in Microsoft Excel. Please close it if you wish to update remarks in-place.")
+        except Exception as exc:
+            self.log.emit(f"⚠ Notice: Unable to update remarks in input Excel file: {exc}")
+
+        self.log.emit(f"\n💾 Generating matching results Excel: {excel_out_path}...")
+        stats = export_matching_results_to_excel(matched_results, excel_out_path)
+        stats["output_dir"] = pdf_out_dir
+        stats["excel_path"] = excel_out_path
         stats["pdf_path"] = final_pdf_path or pdf_out_dir
         stats["pdf_count"] = len(page_matches_map)
 
@@ -1006,11 +1111,12 @@ class CP139Worker(QThread):
         self.log.emit(f"   • Found: {stats['found']}")
         self.log.emit(f"   • Not Found: {stats['not_found']}")
         self.log.emit(f"   • Grand Total Sum: Rs. {stats['total_amount']:,.2f}")
-        self.log.emit(f"   • Output Excel: {self.output_path}")
+        self.log.emit(f"   • Output Folder: {pdf_out_dir}")
+        self.log.emit(f"   • Output Excel: {os.path.basename(excel_out_path)}")
         if final_pdf_path:
-            self.log.emit(f"   • Output PDF: {final_pdf_path}")
+            self.log.emit(f"   • Output PDF: {os.path.basename(final_pdf_path)}")
 
-        self.done.emit(self.output_path, stats, matched_results)
+        self.done.emit(excel_out_path, stats, matched_results)
 
 
 class CP139PostingCheckerPanel(QWidget):
@@ -1020,7 +1126,6 @@ class CP139PostingCheckerPanel(QWidget):
         self.worker = None
         self.file_paths = []
         self.last_output = ""
-        self.last_pdf = ""
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
@@ -1033,8 +1138,8 @@ class CP139PostingCheckerPanel(QWidget):
         ))
         layout.addWidget(hline())
 
-        # Inputs Group
-        group_in = QGroupBox("Source Reports (WAPDA RCP-139 .txt / .pdf files)")
+        # Section 1: Source Reports Group
+        group_in = QGroupBox("Source Reports")
         form_in = QVBoxLayout(group_in)
         self.file_list = QListWidget()
         self.file_list.setMaximumHeight(75)
@@ -1061,76 +1166,17 @@ class CP139PostingCheckerPanel(QWidget):
         form_in.addLayout(btn_row)
         layout.addWidget(group_in)
 
-        # PDF Generation & Excel Matching Group
-        group_pdf = QGroupBox("PDF Generation & Excel Matching")
-        form_pdf = QVBoxLayout(group_pdf)
-
-        chk_row = QHBoxLayout()
-        self.make_pdf_chk = QCheckBox("Make PDFs")
-        self.make_pdf_chk.setChecked(False)
-        self.make_pdf_chk.toggled.connect(self._on_make_pdf_toggled)
-        chk_row.addWidget(self.make_pdf_chk)
-
-        self.single_pdf_chk = QCheckBox("Single PDF")
-        self.single_pdf_chk.setChecked(True)
-        self.single_pdf_chk.setEnabled(False)
-        chk_row.addWidget(self.single_pdf_chk)
-
-        self.stamp_para_chk = QCheckBox("Para No Stamped")
-        self.stamp_para_chk.setChecked(True)
-        self.stamp_para_chk.setEnabled(False)
-        chk_row.addWidget(self.stamp_para_chk)
-        chk_row.addStretch()
-        form_pdf.addLayout(chk_row)
-
-        excel_row = QHBoxLayout()
-        excel_row.addWidget(QLabel("Excel input (.xlsx):"))
-        self.excel_in_ed = QLineEdit()
-        self.excel_in_ed.setPlaceholderText("Select Excel workbook containing Col A: AC No., Col B: Para Sr. No.")
-        self.excel_in_ed.setEnabled(False)
-        excel_row.addWidget(self.excel_in_ed, 1)
-
-        self.browse_excel_btn = QPushButton("📄 Browse Excel...")
-        self.browse_excel_btn.setEnabled(False)
-        self.browse_excel_btn.clicked.connect(self._browse_excel)
-        excel_row.addWidget(self.browse_excel_btn)
-
-        self.download_tmpl_btn = QPushButton("📥 Download Template")
-        self.download_tmpl_btn.setEnabled(False)
-        self.download_tmpl_btn.clicked.connect(self._download_template)
-        excel_row.addWidget(self.download_tmpl_btn)
-        form_pdf.addLayout(excel_row)
-
-        pdf_out_row = QHBoxLayout()
-        pdf_out_row.addWidget(QLabel("Output PDF folder / file:"))
-        self.pdf_out_ed = QLineEdit()
-        self.pdf_out_ed.setPlaceholderText("Auto-generated folder 'CP139_PDF_Output' alongside source files if left blank")
-        self.pdf_out_ed.setEnabled(False)
-        pdf_out_row.addWidget(self.pdf_out_ed, 1)
-
-        self.browse_pdf_out_btn = QPushButton("📁 Browse Folder...")
-        self.browse_pdf_out_btn.setEnabled(False)
-        self.browse_pdf_out_btn.clicked.connect(self._browse_pdf_out)
-        pdf_out_row.addWidget(self.browse_pdf_out_btn)
-        form_pdf.addLayout(pdf_out_row)
-
-        layout.addWidget(group_pdf)
-
-        # Output & Options Group
-        group_out = QGroupBox("Output Settings & Processing Options")
+        # Section 2: Output Settings Group
+        group_out = QGroupBox("Output Settings")
         form_out = QVBoxLayout(group_out)
 
         out_row = QHBoxLayout()
-        out_row.addWidget(QLabel("Output Excel destination:"))
-        self.out_ed = QLineEdit()
-        self.out_ed.setPlaceholderText("Auto-generated alongside source files if left blank")
-        out_row.addWidget(self.out_ed, 1)
+        out_row.addWidget(QLabel("Output Folder:"))
+        self.out_dir_ed = QLineEdit()
+        self.out_dir_ed.setPlaceholderText("Auto-generated alongside source files if left blank")
+        out_row.addWidget(self.out_dir_ed, 1)
 
-        browse_file_btn = QPushButton("📄 File...")
-        browse_file_btn.clicked.connect(self._browse_file)
-        out_row.addWidget(browse_file_btn)
-
-        browse_folder_btn = QPushButton("📁 Folder...")
+        browse_folder_btn = QPushButton("📁 Browse Folder...")
         browse_folder_btn.clicked.connect(self._browse_folder)
         out_row.addWidget(browse_folder_btn)
         form_out.addLayout(out_row)
@@ -1165,6 +1211,55 @@ class CP139PostingCheckerPanel(QWidget):
         form_out.addLayout(filter_row)
         layout.addWidget(group_out)
 
+        # Section 3: PDF Generation Group
+        group_pdf = QGroupBox("PDF Generation")
+        form_pdf = QVBoxLayout(group_pdf)
+
+        chk_row = QHBoxLayout()
+        self.make_pdf_chk = QCheckBox("Make PDFs")
+        self.make_pdf_chk.setChecked(False)
+        self.make_pdf_chk.toggled.connect(self._on_make_pdf_toggled)
+        chk_row.addWidget(self.make_pdf_chk)
+
+        self.single_pdf_chk = QCheckBox("Single PDF")
+        self.single_pdf_chk.setChecked(True)
+        self.single_pdf_chk.setEnabled(False)
+        self.single_pdf_chk.toggled.connect(self._on_single_pdf_toggled)
+        chk_row.addWidget(self.single_pdf_chk)
+
+        self.separate_pdf_chk = QCheckBox("Separate PDFs")
+        self.separate_pdf_chk.setChecked(False)
+        self.separate_pdf_chk.setEnabled(False)
+        self.separate_pdf_chk.toggled.connect(self._on_separate_pdf_toggled)
+        chk_row.addWidget(self.separate_pdf_chk)
+
+        self.stamp_para_chk = QCheckBox("Para No Stamped")
+        self.stamp_para_chk.setChecked(True)
+        self.stamp_para_chk.setEnabled(False)
+        chk_row.addWidget(self.stamp_para_chk)
+        chk_row.addStretch()
+        form_pdf.addLayout(chk_row)
+
+        excel_row = QHBoxLayout()
+        excel_row.addWidget(QLabel("Excel input (.xlsx):"))
+        self.excel_in_ed = QLineEdit()
+        self.excel_in_ed.setPlaceholderText("Select Excel workbook containing Col A: AC No., Col B: Para Sr. No.")
+        self.excel_in_ed.setEnabled(False)
+        excel_row.addWidget(self.excel_in_ed, 1)
+
+        self.browse_excel_btn = QPushButton("📄 Browse Excel...")
+        self.browse_excel_btn.setEnabled(False)
+        self.browse_excel_btn.clicked.connect(self._browse_excel)
+        excel_row.addWidget(self.browse_excel_btn)
+
+        self.download_tmpl_btn = QPushButton("📥 Download Template")
+        self.download_tmpl_btn.setEnabled(False)
+        self.download_tmpl_btn.clicked.connect(self._download_template)
+        excel_row.addWidget(self.download_tmpl_btn)
+        form_pdf.addLayout(excel_row)
+
+        layout.addWidget(group_pdf)
+
         # Actions Row
         actions = QHBoxLayout()
         self.start_btn = QPushButton("▶  START PROCESSING")
@@ -1177,48 +1272,64 @@ class CP139PostingCheckerPanel(QWidget):
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self._stop)
         actions.addWidget(self.stop_btn)
-
-        self.open_excel_btn = QPushButton("📊 Open Excel")
-        self.open_excel_btn.setEnabled(False)
-        self.open_excel_btn.clicked.connect(self._open_excel)
-        actions.addWidget(self.open_excel_btn)
-
-        self.open_pdf_btn = QPushButton("📑 Open PDF")
-        self.open_pdf_btn.setEnabled(False)
-        self.open_pdf_btn.clicked.connect(self._open_pdf)
-        actions.addWidget(self.open_pdf_btn)
-
-        self.open_folder_btn = QPushButton("📂 Open Folder")
-        self.open_folder_btn.setEnabled(False)
-        self.open_folder_btn.clicked.connect(self._open_folder)
-        actions.addWidget(self.open_folder_btn)
         actions.addStretch()
         layout.addLayout(actions)
 
-        # Status & Progress
+        # Section 4: Logs Group
+        group_logs = QGroupBox("Logs")
+        form_logs = QVBoxLayout(group_logs)
+
         self.status = QLabel("Status: Ready. Add CP-139 file(s) or folder to begin.")
         self.status.setStyleSheet("color:#4a90d9;")
-        layout.addWidget(self.status)
+        form_logs.addWidget(self.status)
 
-        # Log Box
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
-        self.log_box.setMinimumHeight(130)
-        layout.addWidget(self.log_box)
+        self.log_box.setMinimumHeight(150)
+        form_logs.addWidget(self.log_box)
+
+        layout.addWidget(group_logs)
+
+    def _on_single_pdf_toggled(self, checked: bool):
+        if not self.make_pdf_chk.isChecked():
+            return
+        if checked:
+            self.separate_pdf_chk.blockSignals(True)
+            self.separate_pdf_chk.setChecked(False)
+            self.separate_pdf_chk.blockSignals(False)
+            self.separate_pdf_chk.setEnabled(False)
+        else:
+            self.separate_pdf_chk.setEnabled(True)
+
+    def _on_separate_pdf_toggled(self, checked: bool):
+        if not self.make_pdf_chk.isChecked():
+            return
+        if checked:
+            self.single_pdf_chk.blockSignals(True)
+            self.single_pdf_chk.setChecked(False)
+            self.single_pdf_chk.blockSignals(False)
+            self.single_pdf_chk.setEnabled(False)
+        else:
+            self.single_pdf_chk.setEnabled(True)
 
     def _on_make_pdf_toggled(self, checked: bool):
-        self.single_pdf_chk.setEnabled(checked)
         self.stamp_para_chk.setEnabled(checked)
         self.excel_in_ed.setEnabled(checked)
         self.browse_excel_btn.setEnabled(checked)
         self.download_tmpl_btn.setEnabled(checked)
-        self.pdf_out_ed.setEnabled(checked)
-        self.browse_pdf_out_btn.setEnabled(checked)
 
         if checked:
-            if not self.pdf_out_ed.text().strip() and self.file_paths:
-                first_dir = os.path.dirname(self.file_paths[0])
-                self.pdf_out_ed.setText(os.path.normpath(os.path.join(first_dir, "CP139_PDF_Output")))
+            if self.separate_pdf_chk.isChecked():
+                self.separate_pdf_chk.setEnabled(True)
+                self.single_pdf_chk.setEnabled(False)
+            else:
+                self.single_pdf_chk.setEnabled(True)
+                self.single_pdf_chk.setChecked(True)
+                self.separate_pdf_chk.setChecked(False)
+                self.separate_pdf_chk.setEnabled(False)
+        else:
+            self.single_pdf_chk.setEnabled(False)
+            self.separate_pdf_chk.setEnabled(False)
 
     def _on_dedup_toggled(self, checked: bool):
         self.dedup_mode.setEnabled(checked)
@@ -1259,21 +1370,13 @@ class CP139PostingCheckerPanel(QWidget):
     def _clear_files(self):
         self.file_paths.clear()
         self.file_list.clear()
-        self.out_ed.clear()
-        self.open_excel_btn.setEnabled(False)
-        self.open_pdf_btn.setEnabled(False)
-        self.open_folder_btn.setEnabled(False)
+        self.out_dir_ed.clear()
         self.status.setText("Status: Cleared all files.")
 
     def _update_default_output(self):
-        if self.file_paths:
+        if self.file_paths and not self.out_dir_ed.text().strip():
             first_dir = os.path.dirname(self.file_paths[0])
-            first_base = os.path.splitext(os.path.basename(self.file_paths[0]))[0]
-            date_str = datetime.now().strftime("%d%m%Y")
-            if not self.out_ed.text().strip():
-                self.out_ed.setText(os.path.normpath(os.path.join(first_dir, f"{first_base}_Results_{date_str}.xlsx")))
-            if not self.pdf_out_ed.text().strip():
-                self.pdf_out_ed.setText(os.path.normpath(os.path.join(first_dir, "CP139_PDF_Output")))
+            self.out_dir_ed.setText(os.path.normpath(first_dir))
         if len(self.file_paths) > 1:
             self.file_chk.setChecked(True)
 
@@ -1288,7 +1391,7 @@ class CP139PostingCheckerPanel(QWidget):
             self.excel_in_ed.setText(os.path.normpath(path))
 
     def _download_template(self):
-        curr_dir = os.path.dirname(self.file_paths[0]) if self.file_paths else ""
+        curr_dir = self.out_dir_ed.text().strip() or (os.path.dirname(self.file_paths[0]) if self.file_paths else "")
         default_file = os.path.join(curr_dir, "CP139_Posting_Template.xlsx") if curr_dir else "CP139_Posting_Template.xlsx"
         path, _ = QFileDialog.getSaveFileName(
             self,
@@ -1300,28 +1403,15 @@ class CP139PostingCheckerPanel(QWidget):
             if not path.lower().endswith(".xlsx"):
                 path += ".xlsx"
             download_cp139_template(path)
-            notify(self, "Template Saved", f"CP-139 template saved to:\n{path}", file_path=path)
-
-    def _browse_pdf_out(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Output PDF Folder")
-        if folder:
-            self.pdf_out_ed.setText(os.path.normpath(folder))
-
-    def _browse_file(self):
-        curr = self.out_ed.text().strip()
-        init_dir = os.path.dirname(curr) if curr and os.path.isdir(os.path.dirname(curr)) else ""
-        path, _ = QFileDialog.getSaveFileName(self, "Save Output Excel As", init_dir, "Excel Workbook (*.xlsx)")
-        if path:
-            if not path.lower().endswith(".xlsx"):
-                path += ".xlsx"
-            self.out_ed.setText(os.path.normpath(path))
+            box = QMessageBox(QMessageBox.Information, "Template Saved", f"CP-139 template saved to:\n{path}", parent=self)
+            box.addButton("Open File", QMessageBox.ActionRole).clicked.connect(lambda: os.startfile(path))
+            box.addButton(QMessageBox.Ok)
+            box.open()
 
     def _browse_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        folder = QFileDialog.getExistingDirectory(self, "Select Output Folder", self.out_dir_ed.text().strip())
         if folder:
-            curr = self.out_ed.text().strip()
-            name = os.path.basename(curr) if curr and curr.lower().endswith(".xlsx") else "CP139_Posting_Results.xlsx"
-            self.out_ed.setText(os.path.normpath(os.path.join(folder, name)))
+            self.out_dir_ed.setText(os.path.normpath(folder))
 
     def _start(self):
         if not self.file_paths:
@@ -1334,31 +1424,33 @@ class CP139PostingCheckerPanel(QWidget):
             if not excel_in or not os.path.isfile(excel_in):
                 QMessageBox.warning(self, "Missing Excel Input", "Please select an existing Excel workbook containing AC numbers to match.")
                 return
+            if not self.single_pdf_chk.isChecked() and not self.separate_pdf_chk.isChecked():
+                QMessageBox.warning(self, "PDF Option Required", "Please select either 'Single PDF' or 'Separate PDFs'.")
+                return
 
-        out_path = self.out_ed.text().strip()
-        if not out_path:
+        out_dir = self.out_dir_ed.text().strip()
+        if not out_dir:
             self._update_default_output()
-            out_path = self.out_ed.text().strip()
+            out_dir = self.out_dir_ed.text().strip()
+
+        os.makedirs(out_dir, exist_ok=True)
 
         self.log_box.clear()
         self.status.setText("Status: Processing CP-139 reports...")
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
-        self.open_excel_btn.setEnabled(False)
-        self.open_pdf_btn.setEnabled(False)
-        self.open_folder_btn.setEnabled(False)
 
         self.worker = CP139Worker(
             file_paths=list(self.file_paths),
-            output_path=out_path,
+            output_path=out_dir,
             deduplicate=self.single_chk.isChecked(),
             dedup_mode=self.dedup_mode.currentData(),
             status_filter=self.status_filter_cb.currentData(),
             include_source_file=self.file_chk.isChecked(),
             make_pdfs=is_make_pdf,
             excel_input_path=self.excel_in_ed.text().strip() if is_make_pdf else "",
-            pdf_output_path=self.pdf_out_ed.text().strip() if is_make_pdf else "",
             single_pdf=self.single_pdf_chk.isChecked() if is_make_pdf else False,
+            separate_pdfs=self.separate_pdf_chk.isChecked() if is_make_pdf else False,
             stamp_para=self.stamp_para_chk.isChecked() if is_make_pdf else False
         )
         self.worker.log.connect(self._log)
@@ -1381,24 +1473,20 @@ class CP139PostingCheckerPanel(QWidget):
 
     def _done(self, saved_path: str, stats: dict, records: list):
         self.last_output = saved_path
-        self.last_pdf = stats.get("pdf_path", "")
-        self.status.setText(f"Status: Finished successfully. Output generated at {os.path.basename(saved_path)}")
-        self.open_excel_btn.setEnabled(True)
-        if self.last_pdf and os.path.exists(self.last_pdf):
-            self.open_pdf_btn.setEnabled(True)
-        self.open_folder_btn.setEnabled(True)
+        out_folder = stats.get("output_dir") or os.path.dirname(saved_path)
+        self.status.setText(f"Status: Finished successfully. Output in {os.path.basename(out_folder)}")
 
         amt = stats.get("total_amount", 0.0)
         if self.make_pdf_chk.isChecked():
             msg_body = (
-                f"CP 139 Make PDFs & Excel Matching Complete!\n\n"
+                f"CP 139 Processing & PDF Generation Complete!\n\n"
                 f"  • Total ACs Searched: {stats.get('total', 0)}\n"
                 f"  • Found & Highlighted: {stats.get('found', 0)}\n"
                 f"  • Not Found: {stats.get('not_found', 0)}\n"
                 f"  • Grand Total Sum: Rs. {amt:,.2f}\n"
-                f"  • Highlighted Pages: {stats.get('pdf_count', 0)}\n\n"
-                f"Excel Results saved to:\n{saved_path}\n\n"
-                f"PDF output saved to:\n{stats.get('pdf_path', '')}"
+                f"  • PDF Pages Processed: {stats.get('pdf_count', 0)}\n\n"
+                f"Output Folder:\n{out_folder}\n\n"
+                f"Excel Results File:\n{os.path.basename(saved_path)}"
             )
         else:
             msg_body = (
@@ -1410,33 +1498,24 @@ class CP139PostingCheckerPanel(QWidget):
             )
             if stats.get("duplicates_removed", 0) > 0:
                 msg_body += f"  • Duplicates Removed: {stats.get('duplicates_removed')}\n"
-            msg_body += f"\nExcel file saved to:\n{saved_path}"
+            msg_body += f"\nOutput Folder:\n{out_folder}\n\nExcel Results File:\n{os.path.basename(saved_path)}"
 
-        notify(
-            self,
-            "CP 139 Completed",
-            msg_body,
-            file_path=saved_path,
-            folder_path=os.path.dirname(saved_path)
-        )
+        # Dialog with Open Excel and Open Folder options
+        box = QMessageBox(QMessageBox.Information, "CP 139 Completed", msg_body, parent=self)
+        box.setAttribute(Qt.WA_DeleteOnClose)
+
+        open_excel_btn = box.addButton("Open Excel", QMessageBox.ActionRole)
+        open_excel_btn.clicked.connect(lambda: os.startfile(saved_path) if os.path.exists(saved_path) else None)
+
+        open_folder_btn = box.addButton("Open Folder", QMessageBox.ActionRole)
+        open_folder_btn.clicked.connect(lambda: os.startfile(out_folder) if os.path.exists(out_folder) else None)
+
+        box.addButton(QMessageBox.Ok)
+        box.open()
 
     def _failed(self, error_msg: str):
         self.status.setText("Status: Failed")
         notify(self, "CP 139 Error", error_msg, critical=True)
-
-    def _open_excel(self):
-        if self.last_output and os.path.exists(self.last_output):
-            os.startfile(self.last_output)
-
-    def _open_pdf(self):
-        if self.last_pdf and os.path.exists(self.last_pdf):
-            os.startfile(self.last_pdf)
-
-    def _open_folder(self):
-        if self.last_output:
-            folder = os.path.dirname(os.path.abspath(self.last_output))
-            if os.path.exists(folder):
-                os.startfile(folder)
 
 
 if __name__ == "__main__":
