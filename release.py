@@ -208,20 +208,43 @@ def main():
     # 6. Optional: Register release on Vercel backend
     api_url = os.environ.get("LICENSE_API_URL", "https://pit-csuite.vercel.app").rstrip("/")
     admin_secret = os.environ.get("ADMIN_SECRET", "")
-    if admin_secret:
+    admin_cfg = ROOT_DIR / ".admin_config.json"
+    if admin_cfg.exists():
         try:
-            import requests
-            set_url = f"{api_url}/api/admin/set-update"
-            r = requests.post(
-                set_url,
-                json={"version": target_ver, "release_notes": msg, "file_name": "PITCSuite_Setup.exe"},
-                headers={"x-admin-secret": admin_secret},
-                timeout=5
-            )
-            if r.status_code == 200:
-                print(f"  ✔ Update registered with Vercel API: v{target_ver}")
+            import json
+            cfg = json.loads(admin_cfg.read_text(encoding="utf-8"))
+            if not admin_secret:
+                admin_secret = cfg.get("admin_secret", "")
+            if api_url == "https://pit-csuite.vercel.app" and cfg.get("api_url"):
+                api_url = cfg.get("api_url").rstrip("/")
         except Exception:
             pass
+
+    if admin_secret:
+        try:
+            import json
+            import urllib.request
+            set_url = f"{api_url}/api/admin/set-update"
+            payload = json.dumps({
+                "version": target_ver,
+                "release_notes": msg,
+                "file_name": "PITCSuite_Setup.exe"
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                set_url,
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-admin-secret": admin_secret,
+                    "User-Agent": "PITCSuite-Release/1.0"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                if resp.status == 200:
+                    print(f"  ✔ Update registered with Vercel API: v{target_ver}")
+        except Exception as e:
+            print(f"  ℹ Notice: Could not register update directly with Vercel API ({e})")
 
     print("\n" + "=" * 60)
     print("🎉  RELEASE PIPELINE TRIGGERED SUCCESSFULLY!")

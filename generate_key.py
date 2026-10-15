@@ -19,7 +19,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
-import requests
+import urllib.error
+import urllib.request
 
 # Default API Configuration
 DEFAULT_API_URL = os.environ.get("LICENSE_API_URL", "https://pit-csuite.vercel.app").rstrip("/")
@@ -83,25 +84,30 @@ def record_generated_key(serial_key: str, plan_type: str, duration_days: int, ma
 
 
 def generate_key_api(api_url: str, admin_secret: str, plan_type: str) -> dict:
-    """Call the remote API to generate a new key."""
+    """Call the remote API to generate a new key using standard library."""
     url = f"{api_url.rstrip('/')}/api/admin/generate"
     headers = {
         "Content-Type": "application/json",
         "x-admin-secret": admin_secret.strip(),
+        "User-Agent": "PITCSuite-AdminConsole/1.0"
     }
-    payload = {"plan_type": plan_type}
-    resp = requests.post(url, json=payload, headers=headers, timeout=12)
+    payload = json.dumps({"plan_type": plan_type}).encode("utf-8")
+    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+
     try:
-        data = resp.json()
-    except Exception:
-        resp.raise_for_status()
-        raise RuntimeError(f"Unexpected response from server: {resp.text}")
-
-    if resp.status_code >= 400 or not data.get("success"):
-        err = data.get("error") or data.get("message") or f"HTTP {resp.status_code}"
-        raise RuntimeError(err)
-
-    return data
+        with urllib.request.urlopen(req, timeout=12) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            err_body = json.loads(e.read().decode("utf-8"))
+            err_msg = err_body.get("error") or err_body.get("message")
+        except Exception:
+            err_msg = str(e.reason)
+        raise RuntimeError(err_msg or f"HTTP {e.code}")
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"Connection failed: {e.reason}")
+    except Exception as e:
+        raise RuntimeError(f"Request failed: {str(e)}")
 
 
 class KeyGeneratorGUI(tk.Tk):
