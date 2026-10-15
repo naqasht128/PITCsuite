@@ -1014,7 +1014,7 @@ class CP139Worker(QThread):
 
 
 class CP139PostingCheckerPanel(QWidget):
-    """UI Panel for CP 139 Posting check/Make PDF in PITC Suite."""
+    """UI Panel for CP 139 Posting Check/PDF in PITC Suite."""
     def __init__(self):
         super().__init__()
         self.worker = None
@@ -1026,7 +1026,7 @@ class CP139PostingCheckerPanel(QWidget):
         layout.setSpacing(10)
 
         # Header Title and Description
-        layout.addWidget(lbl("CP 139 Posting check/Make PDF", bold=True, color="#7eb8f7"))
+        layout.addWidget(lbl("CP 139 Posting Check/PDF", bold=True, color="#7eb8f7"))
         layout.addWidget(lbl(
             "Extract Ref#, S/Div, Grand Total, match against Excel AC numbers, highlight records, and generate PDF pages.",
             color="#556"

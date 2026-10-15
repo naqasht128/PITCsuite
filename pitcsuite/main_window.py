@@ -43,7 +43,7 @@ TOOLS = [
     ("Payment Extractor from 88L",    PaymentExtract88LPanel, "payment_ext"),
     ("CP 52 Posting to PDF",          CP52PostingCheckerPanel, "cp52"),
     ("CP 136 & 137 Posting Checker",   CP136PostingCheckerPanel, "cp136"),
-    ("CP 139 Posting check/Make PDF", CP139PostingCheckerPanel, "cp139"),
+    ("CP 139 Posting Check/PDF",      CP139PostingCheckerPanel, "cp139"),
     ("CP 22T Posting Checker",        CP22TCheckerPanel, "cp22t"),
     ("CP21c Converter",               CP21cConverterPanel, "cp21c"),
     ("Double CR Checker",             DoubleCRPanel, "double_cr"),
