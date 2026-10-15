@@ -266,11 +266,11 @@ def order_output_headers(headers):
         "In_Bill_Fix_Charges (Estimated)",
     ]
     ordered += [name for name in meter_order if name in headers and name not in ordered]
-    ordered += [name for name in headers if name not in ordered and name not in {"feeder", "scrape_status"}]
+    ordered += [name for name in headers if name not in ordered and name not in {"feeder", "Remarks", "remarks", "scrape_status", "scrape status"}]
     if "feeder" in headers:
         ordered.append("feeder")
-    if "scrape_status" in headers:
-        ordered.append("scrape_status")
+    if any(h in headers for h in ("Remarks", "remarks", "scrape_status", "scrape status")):
+        ordered.append("Remarks")
     return ordered
 
 
@@ -578,33 +578,65 @@ class PITCBillScraper:
                             output["Total FPA"] = cand
                             break
 
-    def search(self, account):
+    def _fetch_url_with_retry(self, session, method, url, data=None, stop_event=None, log_callback=None):
+        was_disconnected = False
+        while True:
+            if stop_event and stop_event.is_set():
+                raise InterruptedError("Operation stopped by user")
+            try:
+                if method.lower() == "post":
+                    resp = session.post(url, data=data, timeout=self.timeout)
+                else:
+                    resp = session.get(url, timeout=self.timeout)
+                resp.raise_for_status()
+                if was_disconnected and log_callback:
+                    log_callback("Internet connection restored. Resuming bill processing...")
+                return resp
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, ConnectionResetError, OSError):
+                was_disconnected = True
+                if log_callback:
+                    log_callback("Internet disconnected. Waiting for network connection to restore...")
+                for _ in range(30):
+                    if stop_event and stop_event.is_set():
+                        raise InterruptedError("Operation stopped by user")
+                    time.sleep(0.1)
+            except requests.exceptions.HTTPError as exc:
+                if exc.response is not None and 500 <= exc.response.status_code <= 504:
+                    was_disconnected = True
+                    if log_callback:
+                        log_callback(f"PITC server busy (HTTP {exc.response.status_code}). Retrying in a moment...")
+                    for _ in range(20):
+                        if stop_event and stop_event.is_set():
+                            raise InterruptedError("Operation stopped by user")
+                        time.sleep(0.1)
+                    continue
+                raise
+
+    def search(self, account, stop_event=None, log_callback=None):
         session = requests.Session()
         session.headers.update({"User-Agent": "Mozilla/5.0 (compatible; PITC-Bill-Exporter/1.0)"})
-        page = session.get(URL, timeout=self.timeout)
-        page.raise_for_status()
+        page = self._fetch_url_with_retry(session, "get", URL, stop_event=stop_event, log_callback=log_callback)
         soup = BeautifulSoup(page.text, "html.parser")
         form = soup.select_one("form#SubmitForm") or soup.find("form")
         if not form:
             raise RuntimeError("PITC search form was not found")
         payload = {i["name"]: i.get("value", "") for i in form.select("input[type=hidden][name]")}
         payload.update({"rbSearchByList": "refno", "searchTextBox": account, "ruCodeTextBox": "", "btnSearch": "Search"})
-        result = session.post(URL, data=payload, timeout=self.timeout)
-        result.raise_for_status()
+        result = self._fetch_url_with_retry(session, "post", URL, data=payload, stop_event=stop_event, log_callback=log_callback)
         if "CONSUMER DETAIL" not in result.text.upper() and "CONSUMER DETAILS" not in result.text.upper():
             raise RuntimeError(clean(BeautifulSoup(result.text, "html.parser").get_text(" "))[:300] or "No bill returned")
         return BeautifulSoup(result.text, "html.parser")
 
-    def scrape_account(self, raw_account, existing_status=None):
+    def scrape_account(self, raw_account, existing_status=None, stop_event=None, log_callback=None):
         raw = str(raw_account).strip()
         if re.fullmatch(r"[0-9.]+e[+\-]?[0-9]+", raw, re.I):
             raw = format(Decimal(raw), "f")
         account = re.sub(r"\D", "", raw)
         if not re.fullmatch(r"\d{10,14}", account):
-            return {"_account": account, "scrape_status": "invalid account number"}
+            return {"_account": account, "Remarks": "Bill Not Found", "scrape_status": "Bill Not Found"}
         try:
-            soup = self.search(account)
-            out = {"_account": account, "scrape_status": "ok"}
+            soup = self.search(account, stop_event=stop_event, log_callback=log_callback)
+            out = {"_account": account, "Remarks": "Processed", "scrape_status": "Processed"}
             self.put_general_pairs(out, soup)
             self.put_general_text_pairs(out, soup)
             for cell in soup.select(".grid-col-cell"):
@@ -714,10 +746,12 @@ class PITCBillScraper:
                 out["In_Bill_Fix_Charges (Estimated)"] = in_bill_fix
 
             return out
+        except InterruptedError:
+            raise
         except Exception as exc:
-            return {"_account": account, "scrape_status": f"error: {exc}"}
+            return {"_account": account, "Remarks": "Bill Not Found", "scrape_status": "Bill Not Found"}
 
-    def update_workbook(self, path, progress=None, stop_event=None):
+    def update_workbook(self, path, progress=None, stop_event=None, log_callback=None):
         if path.suffix.lower() != ".xlsx":
             raise RuntimeError("Please select an .xlsx workbook. The selected workbook is updated in place.")
         workbook = load_workbook(path)
@@ -737,6 +771,8 @@ class PITCBillScraper:
                 raw = sheet.cell(1, col).value
                 if raw:
                     norm = "AC No." if col == 1 else normalized_key(raw)
+                    if norm.lower() in ("scrape_status", "scrape status"):
+                        norm = "Remarks"
                     existing_col_names[col] = norm
 
         row_records = []
@@ -756,58 +792,81 @@ class PITCBillScraper:
         total = len(row_records)
         all_keys = set()
         for col_name in existing_col_names.values():
-            if not is_dropped(col_name):
+            if not is_dropped(col_name) and col_name not in ("scrape_status", "scrape status"):
                 all_keys.add(col_name)
 
         # 2. Process each account and merge results into record dictionary
-        for done, record in enumerate(row_records, 1):
-            if stop_event and stop_event.is_set():
-                break
-            account = record.get("AC No.")
-            existing_status = record.get("status")
-            result = self.scrape_account(account, existing_status=existing_status)
-            record.update(result)
+        try:
+            for done, record in enumerate(row_records, 1):
+                if stop_event and stop_event.is_set():
+                    break
+                account = record.get("AC No.")
+                existing_status = record.get("status")
+                try:
+                    result = self.scrape_account(account, existing_status=existing_status, stop_event=stop_event, log_callback=log_callback)
+                except InterruptedError:
+                    break
+                record.update(result)
 
-            # Double-check status condition on merged record
-            effective_status = record.get("status") or existing_status
-            if is_disc_status(effective_status):
-                record["Diff_cum_mdi1"] = None
-                record["diff_cum_mdi2"] = None
-                record["Actual MDI"] = None
-                record["Actual_Fix_Charges"] = None
+                # Double-check status condition on merged record
+                effective_status = record.get("status") or existing_status
+                if is_disc_status(effective_status):
+                    record["Diff_cum_mdi1"] = None
+                    record["diff_cum_mdi2"] = None
+                    record["Actual MDI"] = None
+                    record["Actual_Fix_Charges"] = None
 
-            for k in result:
-                if not k.startswith("_") and not is_dropped(k):
-                    all_keys.add(k)
-            if progress:
-                progress(done, total, result)
-            time.sleep(self.delay)
+                for k in result:
+                    if not k.startswith("_") and not is_dropped(k) and k not in ("scrape_status", "scrape status"):
+                        all_keys.add(k)
+                if progress:
+                    progress(done, total, record)
 
-        # 3. Build ordered final headers
-        all_keys.add("AC No.")
-        all_keys.add("feeder")
-        all_keys.add("adjustments")
-        all_keys.add("Current Bill")
-        all_keys.add("Total FPA")
-        all_keys.add("scrape_status")
+                if stop_event and stop_event.is_set():
+                    break
 
-        final_headers = order_output_headers([k for k in all_keys if not is_dropped(k)])
+                slept = 0.0
+                delay_step = 0.1
+                while slept < self.delay:
+                    if stop_event and stop_event.is_set():
+                        break
+                    time.sleep(delay_step)
+                    slept += delay_step
+        finally:
+            # 3. Build ordered final headers and save all progress made up to now
+            all_keys.add("AC No.")
+            all_keys.add("feeder")
+            all_keys.add("adjustments")
+            all_keys.add("Current Bill")
+            all_keys.add("Total FPA")
+            all_keys.add("Remarks")
+            all_keys.discard("scrape_status")
+            all_keys.discard("scrape status")
 
-        # 4. Write data strictly by column name - eliminating column shifting completely
-        if sheet.max_column > len(final_headers):
-            sheet.delete_cols(len(final_headers) + 1, sheet.max_column - len(final_headers))
+            final_headers = order_output_headers([k for k in all_keys if not is_dropped(k)])
 
-        for col_idx, h in enumerate(final_headers, 1):
-            sheet.cell(1, col_idx).value = h
+            # 4. Write data strictly by column name - eliminating column shifting completely
+            if sheet.max_column > len(final_headers):
+                sheet.delete_cols(len(final_headers) + 1, sheet.max_column - len(final_headers))
 
-        for row_idx, record in enumerate(row_records, 2):
             for col_idx, h in enumerate(final_headers, 1):
-                val = record.get(h)
-                if val is not None and should_be_numeric(h):
-                    val = excel_numeric_value(val)
-                sheet.cell(row_idx, col_idx).value = val if val is not None else ""
+                sheet.cell(1, col_idx).value = h
 
-        workbook.save(path)
+            for row_idx, record in enumerate(row_records, 2):
+                for col_idx, h in enumerate(final_headers, 1):
+                    val = record.get(h)
+                    if h == "Remarks":
+                        raw_val = val if val is not None else record.get("scrape_status")
+                        if raw_val is not None:
+                            val_str = str(raw_val).strip().lower()
+                            val = "Processed" if val_str in ("processed", "ok", "done") else "Bill Not Found"
+                        else:
+                            val = ""
+                    elif val is not None and should_be_numeric(h):
+                        val = excel_numeric_value(val)
+                    sheet.cell(row_idx, col_idx).value = val if val is not None else ""
+
+            workbook.save(path)
 
 
 class BillScraperApp(tk.Tk):
@@ -998,9 +1057,17 @@ class BillScraperApp(tk.Tk):
     def run(self, path, delay):
         try:
             def progress(done, total, row):
-                self.events.put(("progress", done, total, row.get("_account", ""), row.get("scrape_status", "")))
+                raw_status = row.get("Remarks") or row.get("scrape_status", "")
+                if str(raw_status).strip().lower() in ("ok", "done", "processed"):
+                    status_text = "Processed"
+                else:
+                    status_text = "Bill Not Found"
+                self.events.put(("progress", done, total, row.get("_account", ""), status_text))
 
-            PITCBillScraper(delay=delay).update_workbook(path, progress, self.stop_event)
+            def log_cb(msg):
+                self.events.put(("log", msg))
+
+            PITCBillScraper(delay=delay).update_workbook(path, progress, self.stop_event, log_callback=log_cb)
             self.events.put(("done", str(path), self.stop_event.is_set()))
         except Exception as exc:
             self.events.put(("error", str(exc)))
@@ -1021,14 +1088,17 @@ class BillScraperApp(tk.Tk):
                     self.total_var.set(str(total))
                     self.status_var.set(f"Processed {done} of {total} accounts...")
 
-                    if status == "ok":
+                    if status == "Processed":
                         self.success_count += 1
                         self.ok_var.set(str(self.success_count))
-                        self.write_log(f"[{done}/{total}] {account}: OK", "ok")
+                        self.write_log(f"[{done}/{total}] {account}: Processed", "ok")
                     else:
                         self.error_count += 1
                         self.err_var.set(str(self.error_count))
-                        self.write_log(f"[{done}/{total}] {account}: {status}", "err")
+                        self.write_log(f"[{done}/{total}] {account}: Bill Not Found", "err")
+
+                elif event[0] == "log":
+                    self.write_log(event[1], "info")
 
                 elif event[0] == "done":
                     _, path, cancelled = event

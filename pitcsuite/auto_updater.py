@@ -27,6 +27,11 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.94": [
+        "<b>Security Hardening (Nuitka Native C++ Compilation):</b> Proprietary tools, licensing, and business logic compiled into native C++ machine code binaries (.pyd) to protect against decompilation and reverse-engineering.",
+        "<b>CP-139 Posting Checker/PDF:</b> Added PDF Generation (single & separate PDFs named by Para Sr. No.), automatic Column C Remarks updating ('Found and PDF made' / 'AC No Not found'), and template download.",
+        "<b>Bill Scrapper:</b> Added FPA and Current Bill fetching for comprehensive consumer billing data extraction."
+    ],
     "v2.8.93": [
         "<b>Security Hardening (Nuitka Native C++ Compilation):</b> Proprietary tools, licensing, and business logic compiled into native C++ machine code binaries (.pyd) to protect against decompilation and reverse-engineering.",
         "<b>CP-139 Posting Checker/PDF:</b> Added PDF Generation (single & separate PDFs named by Para Sr. No.), automatic Column C Remarks updating ('Found and PDF made' / 'AC No Not found'), and template download.",

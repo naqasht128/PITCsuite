@@ -100,6 +100,7 @@ class CP22TCheckerPanel(QWidget):
 
 class BillScraperWorker(QThread):
     progress = Signal(int, int, str, str)
+    log_msg = Signal(str)
     done = Signal(str, bool)
     failed = Signal(str)
 
@@ -110,8 +111,17 @@ class BillScraperWorker(QThread):
         try:
             from pitcsuite.tools.bill_scraper_logic import PITCBillScraper
             def progress(done, total, row):
-                self.progress.emit(done, total, row.get("_account", ""), row.get("scrape_status", ""))
-            PITCBillScraper(delay=self.delay).update_workbook(self.path, progress, self.stop_event)
+                raw_status = row.get("Remarks") or row.get("scrape_status", "")
+                if str(raw_status).strip().lower() in ("ok", "done", "processed"):
+                    status_text = "Processed"
+                else:
+                    status_text = "Bill Not Found"
+                self.progress.emit(done, total, row.get("_account", ""), status_text)
+
+            def log_callback(msg):
+                self.log_msg.emit(msg)
+
+            PITCBillScraper(delay=self.delay).update_workbook(self.path, progress, self.stop_event, log_callback=log_callback)
             self.done.emit(str(self.path), self.stop_event.is_set())
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -149,15 +159,33 @@ class BillScraperPanel(QWidget):
         self.stop_event.clear(); self.log_box.clear(); self.start_btn.setEnabled(False); self.stop_btn.setEnabled(True)
         self.progress_bar.setRange(0, 1); self.progress_bar.setValue(0)
         self.worker = BillScraperWorker(path, self.delay.value(), self.stop_event)
-        self.worker.progress.connect(self._progress); self.worker.done.connect(self._done); self.worker.failed.connect(self._failed); self.worker.start()
+        self.worker.progress.connect(self._progress); self.worker.log_msg.connect(self._log); self.worker.done.connect(self._done); self.worker.failed.connect(self._failed); self.worker.start()
 
-    def _stop(self): self.stop_event.set(); self.progress.setText("Stopping after the current bill...")
+    def _stop(self):
+        self.stop_event.set()
+        self.progress.setText("Stopping... Saving all processed records...")
+        self.log_box.append("⏹ Stop requested. Saving all progress processed so far...")
+
+    def _log(self, msg):
+        self.log_box.append(msg)
+
     def _progress(self, done, total, account, status):
         self.progress_bar.setRange(0, max(total, 1)); self.progress_bar.setValue(done)
-        self.progress.setText(f"Processed {done} of {total} | {account}: {status}"); self.log_box.append(f"{account}: {status}")
+        display_status = "Processed" if str(status).strip().lower() in ("ok", "done", "processed") else "Bill Not Found"
+        self.progress.setText(f"Processed {done} of {total} | {account}: {display_status}")
+        self.log_box.append(f"{account}: {display_status}")
+
     def _done(self, path, cancelled):
-        self.start_btn.setEnabled(True); self.stop_btn.setEnabled(False); self.progress.setText("Stopped." if cancelled else "Completed")
-        if not cancelled: notify(self, "Completed", f"Workbook updated:\n{path}", file_path=path)
+        self.start_btn.setEnabled(True); self.stop_btn.setEnabled(False)
+        if cancelled:
+            self.progress.setText("Stopped (All progress saved)")
+            self.log_box.append(f"✔ Stopped. All progress up to the last bill has been saved to:\n{path}")
+            notify(self, "Stopped", f"Processing stopped. All progress up to the last bill has been saved to:\n{path}", file_path=path)
+        else:
+            self.progress.setText("Completed")
+            self.log_box.append(f"✔ Completed. Workbook updated:\n{path}")
+            notify(self, "Completed", f"Workbook updated:\n{path}", file_path=path)
+
     def _failed(self, message):
         self.start_btn.setEnabled(True); self.stop_btn.setEnabled(False); notify(self, "Error", message, critical=True)
 
