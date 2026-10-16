@@ -25,8 +25,15 @@ import urllib.request
 # Default API Configuration
 DEFAULT_API_URL = os.environ.get("LICENSE_API_URL", "https://pit-csuite.vercel.app").rstrip("/")
 DEFAULT_ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
-CONFIG_FILE = Path(__file__).resolve().parent / ".admin_config.json"
-HISTORY_FILE = Path(__file__).resolve().parent / "serialkeys_history.txt"
+def get_base_dir() -> Path:
+    """Returns directory of running script or executable."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+BASE_DIR = get_base_dir()
+CONFIG_FILE = BASE_DIR / ".admin_config.json"
+HISTORY_FILE = BASE_DIR / "serialkeys_history.txt"
 
 # VS Code Dark+ Palette
 BG_DARK = "#1e1e1e"
@@ -120,8 +127,23 @@ class AdminConsoleGUI(tk.Tk):
 
         self.cached_api, self.cached_secret = load_cached_admin_config()
 
+        self._set_icon()
         self._init_styles()
         self._build_ui()
+
+    def _set_icon(self):
+        icon_candidates = [
+            BASE_DIR / "pitcsuite" / "assets" / "pitcsuite_icon.ico",
+            Path(__file__).resolve().parent / "pitcsuite" / "assets" / "pitcsuite_icon.ico",
+            Path(getattr(sys, "_MEIPASS", "")) / "pitcsuite" / "assets" / "pitcsuite_icon.ico",
+        ]
+        for candidate in icon_candidates:
+            if candidate.exists():
+                try:
+                    self.iconbitmap(str(candidate))
+                    break
+                except Exception:
+                    pass
 
     def _init_styles(self):
         self.style = ttk.Style(self)
@@ -342,8 +364,18 @@ class AdminConsoleGUI(tk.Tk):
 
 def run_cli(args):
     """Run generator in command-line mode."""
-    api_url = (args.url or DEFAULT_API_URL).rstrip("/")
-    admin_secret = args.secret or DEFAULT_ADMIN_SECRET
+    if sys.platform == "win32" and getattr(sys, "frozen", False):
+        try:
+            import ctypes
+            if ctypes.windll.kernel32.AttachConsole(-1):
+                sys.stdout = open("CONOUT$", "w", encoding="utf-8")
+                sys.stderr = open("CONOUT$", "w", encoding="utf-8")
+        except Exception:
+            pass
+
+    cached_url, cached_secret = load_cached_admin_config()
+    api_url = (args.url or cached_url or DEFAULT_API_URL).rstrip("/")
+    admin_secret = args.secret or cached_secret or DEFAULT_ADMIN_SECRET
 
     if not admin_secret:
         admin_secret = input("Enter Admin Secret (x-admin-secret): ").strip()

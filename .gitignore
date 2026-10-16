@@ -189,10 +189,12 @@ node_modules/
 outputs/
 *.inspect.ndjson
 
-# License Keys
-Skey.py
-skey.py
-serialkey.txt
+# Executables & Binaries
+*.exe
+generate_key.exe
+generate_key.spec
+
+# Licensing & Admin Secrets
 *.key
 serialkeys_history.txt
 .admin_config.json
