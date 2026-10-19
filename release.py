@@ -265,6 +265,7 @@ def main():
                 "release_notes": notes_for_api,
                 "file_name": "PITCSuite_Setup.exe"
             }).encode("utf-8")
+            set_url = f"{api_url}/api/admin/set-update"
             req = urllib.request.Request(
                 set_url,
                 data=payload,
