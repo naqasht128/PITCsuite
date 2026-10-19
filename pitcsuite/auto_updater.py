@@ -27,6 +27,12 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.95": [
+        "<b>Bill Scrapper — Billing/Payment History:</b> Added 1-Year (11 historical months) and 6-Months (5 historical months) history extraction options with Month, Status, Units, Bill, and Payment details.",
+        "<b>Protected / Non-Protected Calculation:</b> Added automated Protected/Non-Protected status evaluation strictly for A-1A(01) tariff consumers (≤ 200 units across last 6 months), keeping all other tariffs blank.",
+        "<b>Total Units & Total Payment:</b> Added Total Payment and Total Units columns with native numeric formatting placed right next to each other.",
+        "<b>BNo, SDiv & Meter Type:</b> Added BNo (batch no), SDiv (5-digit sub-division code), and Meter Type (S-P / 3-P) extraction alongside AutoFilter support on Excel headings."
+    ],
     "v2.8.94": [
         "<b>Security Hardening (Nuitka Native C++ Compilation):</b> Proprietary tools, licensing, and business logic compiled into native C++ machine code binaries (.pyd) to protect against decompilation and reverse-engineering.",
         "<b>CP-139 Posting Checker/PDF:</b> Added PDF Generation (single & separate PDFs named by Para Sr. No.), automatic Column C Remarks updating ('Found and PDF made' / 'AC No Not found'), and template download.",

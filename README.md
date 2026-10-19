@@ -3,7 +3,7 @@
 [![Python Version](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.14-blue.svg)](https://www.python.org/)
 [![GUI Framework](https://img.shields.io/badge/GUI-PySide6%20(Qt6)-41cd52.svg)](https://wiki.qt.io/Qt_for_Python)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078d6.svg)](https://www.microsoft.com/windows)
-[![Version](https://img.shields.io/badge/version-2.8.94-orange.svg)](#)
+[![Version](https://img.shields.io/badge/version-2.8.95-orange.svg)](#)
 
 **PITC Suite** is an all-in-one desktop productivity and automation suite designed for utility billing operations, power sector reconciliation, and batch document processing. Built on **PySide6 (Qt 6)**, it combines automated scraping, 2FA-secured portal downloads, ledger audit checkers, and industrial-grade PDF manipulation tools into a unified, responsive interface.
 

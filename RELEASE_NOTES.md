@@ -1,0 +1,4 @@
+• **Bill Scrapper — Billing/Payment History:** Added 1-Year (11 historical months) and 6-Months (5 historical months) history extraction options with Month, Status, Units, Bill, and Payment details.
+• **Protected / Non-Protected Calculation:** Added automated Protected/Non-Protected status evaluation strictly for A-1A(01) tariff consumers (≤ 200 units across last 6 months), keeping all other tariffs blank.
+• **Total Units & Total Payment:** Added Total Payment and Total Units columns with native numeric formatting placed right next to each other.
+• **BNo, SDiv & Meter Type:** Added BNo (batch no), SDiv (5-digit sub-division code), and Meter Type (S-P / 3-P) extraction alongside AutoFilter support on Excel headings.

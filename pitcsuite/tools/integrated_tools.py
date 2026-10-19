@@ -104,16 +104,16 @@ class BillScraperWorker(QThread):
     done = Signal(str, bool)
     failed = Signal(str)
 
-    def __init__(self, path, delay, stop_event):
-        super().__init__(); self.path = Path(path); self.delay = delay; self.stop_event = stop_event
+    def __init__(self, path, delay, stop_event, history_mode=None):
+        super().__init__(); self.path = Path(path); self.delay = delay; self.stop_event = stop_event; self.history_mode = history_mode
 
     def run(self):
         try:
             from pitcsuite.tools.bill_scraper_logic import PITCBillScraper
             def progress(done, total, row):
                 raw_status = row.get("Remarks") or row.get("scrape_status", "")
-                if str(raw_status).strip().lower() in ("ok", "done", "processed"):
-                    status_text = "Processed"
+                if str(raw_status).strip().lower() in ("ok", "done", "processed", "fetched"):
+                    status_text = "Fetched"
                 else:
                     status_text = "Bill Not Found"
                 self.progress.emit(done, total, row.get("_account", ""), status_text)
@@ -121,7 +121,7 @@ class BillScraperWorker(QThread):
             def log_callback(msg):
                 self.log_msg.emit(msg)
 
-            PITCBillScraper(delay=self.delay).update_workbook(self.path, progress, self.stop_event, log_callback=log_callback)
+            PITCBillScraper(delay=self.delay, history_mode=self.history_mode).update_workbook(self.path, progress, self.stop_event, log_callback=log_callback)
             self.done.emit(str(self.path), self.stop_event.is_set())
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -139,44 +139,72 @@ class BillScraperPanel(QWidget):
         browse = QPushButton("Browse"); browse.clicked.connect(self._browse); row.addWidget(browse); form.addLayout(row)
         options = QHBoxLayout(); options.addWidget(QLabel("Delay between bills (seconds):"))
         self.delay = QDoubleSpinBox(); self.delay.setRange(0.1, 30); self.delay.setSingleStep(.1); self.delay.setValue(2.0); options.addWidget(self.delay); options.addStretch(); form.addLayout(options)
+
+        hist_row = QHBoxLayout()
+        self.chk_history_1yr = QCheckBox("Billing/Payment History (1 year)")
+        self.chk_history_6mo = QCheckBox("Billing Payment History (6 months)")
+        self.chk_history_1yr.toggled.connect(self._toggle_1yr)
+        self.chk_history_6mo.toggled.connect(self._toggle_6mo)
+        hist_row.addWidget(self.chk_history_1yr)
+        hist_row.addWidget(self.chk_history_6mo)
+        hist_row.addStretch()
+        form.addLayout(hist_row)
+
         layout.addWidget(group)
         actions = QHBoxLayout(); self.start_btn = QPushButton("▶  START"); self.start_btn.setStyleSheet(START_BTN); self.start_btn.clicked.connect(self._start)
         self.stop_btn = QPushButton("■  STOP"); self.stop_btn.setStyleSheet(STOP_BTN); self.stop_btn.setEnabled(False); self.stop_btn.clicked.connect(self._stop)
         actions.addWidget(self.start_btn); actions.addWidget(self.stop_btn); actions.addStretch(); layout.addLayout(actions)
-        self.progress = QLabel("Processed: 0"); layout.addWidget(self.progress)
+        self.progress = QLabel("Fetched: 0"); layout.addWidget(self.progress)
         self.progress_bar = QProgressBar(); self.progress_bar.setRange(0, 1); self.progress_bar.setValue(0)
         layout.addWidget(self.progress_bar)
         self.log_box = QTextEdit(); self.log_box.setReadOnly(True); layout.addWidget(self.log_box)
 
+    def _toggle_1yr(self, checked):
+        if checked:
+            self.chk_history_6mo.setChecked(False)
+
+    def _toggle_6mo(self, checked):
+        if checked:
+            self.chk_history_1yr.setChecked(False)
+
     def _browse(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Choose workbook", "", "Excel workbook (*.xlsx);;All files (*.*)")
+        path, _ = QFileDialog.getOpenFileName(self, "Choose workbook", "", "Supported Spreadsheets (*.xlsx *.ods);;Excel workbook (*.xlsx);;OpenDocument Spreadsheet (*.ods);;All files (*.*)")
         if path: self.xlsx_ed.setText(path)
 
     def _start(self):
         path = Path(self.xlsx_ed.text().strip())
-        if not path.is_file(): QMessageBox.warning(self, "Input required", "Choose an existing .xlsx workbook first."); return
+        if not path.is_file(): QMessageBox.warning(self, "Input required", "Choose an existing workbook first."); return
         if not QMessageBox.question(self, "Update workbook", "The workbook will be updated in place. Continue?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes: return
         self.stop_event.clear(); self.log_box.clear(); self.start_btn.setEnabled(False); self.stop_btn.setEnabled(True)
+        self.chk_history_1yr.setEnabled(False); self.chk_history_6mo.setEnabled(False)
         self.progress_bar.setRange(0, 1); self.progress_bar.setValue(0)
-        self.worker = BillScraperWorker(path, self.delay.value(), self.stop_event)
+
+        history_mode = None
+        if self.chk_history_1yr.isChecked():
+            history_mode = "1yr"
+        elif self.chk_history_6mo.isChecked():
+            history_mode = "6mo"
+
+        self.worker = BillScraperWorker(path, self.delay.value(), self.stop_event, history_mode=history_mode)
         self.worker.progress.connect(self._progress); self.worker.log_msg.connect(self._log); self.worker.done.connect(self._done); self.worker.failed.connect(self._failed); self.worker.start()
 
     def _stop(self):
         self.stop_event.set()
-        self.progress.setText("Stopping... Saving all processed records...")
-        self.log_box.append("⏹ Stop requested. Saving all progress processed so far...")
+        self.progress.setText("Stopping... Saving all fetched records...")
+        self.log_box.append("⏹ Stop requested. Saving all progress fetched so far...")
 
     def _log(self, msg):
         self.log_box.append(msg)
 
     def _progress(self, done, total, account, status):
         self.progress_bar.setRange(0, max(total, 1)); self.progress_bar.setValue(done)
-        display_status = "Processed" if str(status).strip().lower() in ("ok", "done", "processed") else "Bill Not Found"
-        self.progress.setText(f"Processed {done} of {total} | {account}: {display_status}")
+        display_status = "Fetched" if str(status).strip().lower() in ("ok", "done", "processed", "fetched") else "Bill Not Found"
+        self.progress.setText(f"Fetched {done} of {total} | {account}: {display_status}")
         self.log_box.append(f"{account}: {display_status}")
 
     def _done(self, path, cancelled):
         self.start_btn.setEnabled(True); self.stop_btn.setEnabled(False)
+        self.chk_history_1yr.setEnabled(True); self.chk_history_6mo.setEnabled(True)
         if cancelled:
             self.progress.setText("Stopped (All progress saved)")
             self.log_box.append(f"✔ Stopped. All progress up to the last bill has been saved to:\n{path}")
@@ -187,7 +215,9 @@ class BillScraperPanel(QWidget):
             notify(self, "Completed", f"Workbook updated:\n{path}", file_path=path)
 
     def _failed(self, message):
-        self.start_btn.setEnabled(True); self.stop_btn.setEnabled(False); notify(self, "Error", message, critical=True)
+        self.start_btn.setEnabled(True); self.stop_btn.setEnabled(False)
+        self.chk_history_1yr.setEnabled(True); self.chk_history_6mo.setEnabled(True)
+        notify(self, "Error", message, critical=True)
 
 
 class FileMoverWorker(QThread):
