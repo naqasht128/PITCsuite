@@ -1,3 +1,3 @@
-• **Auto-Updater Resilience & Direct Proxy Delivery:** Fixed update download URL forwarding to ensure silent and manual updates directly download the latest installer from the secure API proxy.
-• **Dynamic API Fallback:** Added automated recovery to query the latest release endpoints directly if download URLs are omitted, permanently preventing stale installer update loops.
-• **Bill Scrapper — Billing History & Details:** Retains full 1-Year/6-Months history extraction, A-1A(01) Protected status calculation, Total Units & Payment, and metadata fields.
+• **Ultra-Smooth Auto-Updater (Bill Scrapper Architecture):** Aligned installer and updater pipeline with Bill Scrapper — unique timestamped download paths, elimination of Restart Manager stalls, and instant process termination.
+• **Zero Delays & Seamless Relaunch:** Removed blocking dialogs and timeouts on update completion, launching the installer detached and restarting into the latest release seamlessly.
+• **Bill Scrapper — Billing History & Analysis:** Full 1-Year/6-Months history extraction, A-1A(01) Protected status calculation, and native numeric Excel formatting.

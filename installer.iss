@@ -2,7 +2,7 @@
 #define AppPublisher "TN Developers Co."
 #define AppExeName "pitcsuite.exe"
 #ifndef AppVersion
-#define AppVersion "2.8.96"
+#define AppVersion "2.8.97"
 #endif
 
 [Setup]
@@ -28,7 +28,6 @@ WizardStyle=modern
 PrivilegesRequired=lowest
 DisableWelcomePage=no
 CloseApplications=force
-CloseApplicationsFilter=pitcsuite.exe
 RestartApplications=no
 VersionInfoCompany={#AppPublisher}
 VersionInfoDescription={#AppName} Setup
@@ -50,7 +49,7 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: deskto
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(AppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent shellexec; WorkingDir: "{app}"
-Filename: "{app}\{#AppExeName}"; Flags: nowait shellexec; Check: IsAutoUpdate; WorkingDir: "{app}"
+Filename: "{app}\{#AppExeName}"; Flags: nowait shellexec; Check: ShouldLaunchSilent; WorkingDir: "{app}"
 
 [Code]
 function SetEnvironmentVariable(lpName, lpValue: string): BOOL;
@@ -72,7 +71,7 @@ begin
   Result := True;
 end;
 
-function IsAutoUpdate: Boolean;
+function ShouldLaunchSilent: Boolean;
 begin
-  Result := ExpandConstant('{param:AUTOUPDATE|0}') = '1';
+  Result := WizardSilent or (ExpandConstant('{param:AUTOUPDATE|0}') = '1');
 end;

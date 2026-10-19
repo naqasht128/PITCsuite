@@ -12,6 +12,7 @@ import re
 import json
 import threading
 import time
+import tempfile
 from typing import List, Dict, Tuple, Optional
 from packaging import version
 from PySide6.QtWidgets import (
@@ -27,6 +28,11 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.97": [
+        "<b>Ultra-Smooth Auto-Updater (Bill Scrapper Architecture):</b> Aligned installer and updater pipeline with Bill Scrapper — unique timestamped download paths, elimination of Restart Manager stalls, and instant process termination.",
+        "<b>Zero Delays & Seamless Relaunch:</b> Removed blocking dialogs and timeouts on update completion, launching the installer detached and restarting into the latest release seamlessly.",
+        "<b>Bill Scrapper — Billing History & Analysis:</b> Full 1-Year/6-Months history extraction, A-1A(01) Protected status calculation, and native numeric Excel formatting."
+    ],
     "v2.8.96": [
         "<b>Auto-Updater Resilience & Direct Proxy Delivery:</b> Fixed update download URL forwarding to ensure silent and manual updates directly download the latest installer from the secure API proxy.",
         "<b>Dynamic API Fallback:</b> Added automated recovery to query the latest release endpoints directly if download URLs are omitted, permanently preventing stale installer update loops.",
@@ -667,16 +673,18 @@ def check_for_updates(parent_window, silent=False):
 
 
 def start_download(parent_window, latest_tag=None, notes=None, download_url=None):
-    """Downloads update setup installer and executes detached silent install."""
-    progress_dialog = QProgressDialog("Downloading Update...", "Cancel", 0, 100, parent_window)
+    """Downloads update setup installer and executes detached silent install matching BillScrapper."""
+    progress_dialog = QProgressDialog("Connecting to update server...", "Cancel", 0, 100, parent_window)
     ver_str = f" ({latest_tag})" if latest_tag else ""
     progress_dialog.setWindowTitle(f"Updating PITC Suite{ver_str}")
     progress_dialog.setWindowModality(Qt.WindowModal)
-    progress_dialog.setAutoClose(True)
-    progress_dialog.setAutoReset(True)
+    progress_dialog.setAutoClose(False)
+    progress_dialog.setAutoReset(False)
     progress_dialog.resize(420, 110)
 
-    dest_path = os.path.join(os.environ.get("TEMP", "C:\\Temp"), "PITCSuite_Setup.exe")
+    # Unique timestamped installer path to prevent file locking and cache collisions (matching BillScrapper)
+    fname = f"update_{int(time.time())}_PITCSuite_Setup.exe"
+    dest_path = os.path.join(tempfile.gettempdir(), fname)
     
     # Resolve target_source: prefer direct/API download_url over obsolete Google Drive fallback
     target_source = download_url
@@ -702,28 +710,19 @@ def start_download(parent_window, latest_tag=None, notes=None, download_url=None
         if total > 0:
             percent = int((downloaded / total) * 100)
             progress_dialog.setValue(percent)
+            dl_mb = downloaded / (1024 * 1024)
+            tot_mb = total / (1024 * 1024)
+            progress_dialog.setLabelText(f"Downloading update... {percent}% ({dl_mb:.1f} MB / {tot_mb:.1f} MB)")
         else:
             progress_dialog.setValue(0)
-            progress_dialog.setLabelText(f"Downloading... {downloaded // 1024 // 1024} MB")
+            dl_mb = downloaded / (1024 * 1024)
+            progress_dialog.setLabelText(f"Downloading update... ({dl_mb:.1f} MB)")
 
-    def on_finished(path):
-        progress_dialog.close()
-        
-        msg = QMessageBox(parent_window)
-        msg.setWindowTitle("Application Update Ready")
-        msg.setIcon(QMessageBox.Information)
-        msg.setText(f"The update{ver_str} is ready to install.")
-        msg.setInformativeText(
-            "The installer will now launch to install the update.\n\n"
-            "All new amendments will be active immediately upon completion."
-        )
-        msg.addButton("Install Update", QMessageBox.AcceptRole)
-        msg.exec()
-        
+    def _apply_and_restart(path):
         # Strip all PyInstaller, Python, and Tk environment variables to prevent child process conflicts
-        env = os.environ.copy()
+        clean_env = os.environ.copy()
         keys_to_remove = [
-            k for k in env
+            k for k in clean_env
             if k.startswith('_PYI')
             or k.startswith('_MEI')
             or k.startswith('PYTHON')
@@ -731,61 +730,55 @@ def start_download(parent_window, latest_tag=None, notes=None, download_url=None
             or k.startswith('TK')
         ]
         for k in keys_to_remove:
-            env.pop(k, None)
+            clean_env.pop(k, None)
             
         if hasattr(sys, '_MEIPASS'):
             meipass = sys._MEIPASS.lower()
-            path_dirs = env.get('PATH', '').split(os.pathsep)
+            path_dirs = clean_env.get('PATH', '').split(os.pathsep)
             path_dirs = [p for p in path_dirs if p.lower().rstrip(r'\/') != meipass and '_mei' not in p.lower()]
-            env['PATH'] = os.pathsep.join(path_dirs)
+            clean_env['PATH'] = os.pathsep.join(path_dirs)
             
-        # Launch Setup.exe with /SILENT /SP- /FORCECLOSEAPPLICATIONS /AUTOUPDATE=1
-        # - /SILENT keeps the installation progress bar visible on screen while suppressing "Next" click wizard prompts
-        # - /SP- disables the initial "Do you wish to continue?" prompt
-        # - /FORCECLOSEAPPLICATIONS forcefully closes running applications using files that need updating
-        # - /AUTOUPDATE=1 instructs installer to auto-relaunch pitcsuite.exe upon completion
+        # Launch Setup.exe matching BillScrapper:
+        # /SILENT /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /AUTOUPDATE=1
         installer_args = [
             path,
             "/SILENT",
-            "/SP-",
+            "/CLOSEAPPLICATIONS",
             "/FORCECLOSEAPPLICATIONS",
             "/AUTOUPDATE=1"
         ]
 
-        creation_flags = 0
-        if sys.platform == 'win32':
-            creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
-            if hasattr(subprocess, 'DETACHED_PROCESS'):
-                creation_flags |= subprocess.DETACHED_PROCESS
-
-        # Reliably spawn detached installer process directly using OS CreateProcessW
+        # Use exact detached creation flags from BillScrapper (CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP)
+        DETACHED_FLAGS = 0x08000000 | 0x00000200
         try:
             subprocess.Popen(
                 installer_args,
-                env=env,
-                creationflags=creation_flags,
+                env=clean_env,
+                creationflags=DETACHED_FLAGS,
                 close_fds=True
             )
         except Exception:
-            # Fallback to ShellExecute if CreateProcess direct fails
-            if sys.platform == 'win32' and hasattr(os, 'startfile'):
-                try:
-                    os.startfile(path, "open", arguments=" ".join(installer_args[1:]))
-                except Exception:
-                    pass
+            subprocess.Popen(
+                installer_args,
+                env=clean_env,
+                close_fds=True
+            )
 
-        # Brief pause to ensure the OS process creation handshake completes fully
-        time.sleep(0.4)
-
-        # Forcefully exit process to release executable and DLL file locks instantly,
-        # preventing "file in use" errors during update
+        # Immediately close window and exit process cleanly without hanging on Qt event loop or threads
         try:
-            app_inst = QApplication.instance()
-            if app_inst:
-                app_inst.quit()
+            parent_window.close()
         except Exception:
             pass
         os._exit(0)
+
+    def on_finished(path):
+        progress_dialog.setValue(100)
+        progress_dialog.setLabelText("Download complete! Restarting to apply update...")
+        progress_dialog.setCancelButton(None)
+        QApplication.processEvents()
+        
+        # Smooth automatic restart with 600ms delay, exactly matching BillScrapper
+        QTimer.singleShot(600, lambda: _apply_and_restart(path))
 
     def on_error(err):
         progress_dialog.close()
