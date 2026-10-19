@@ -1,4 +1,3 @@
-• **Bill Scrapper — Billing/Payment History:** Added 1-Year (11 historical months) and 6-Months (5 historical months) history extraction options with Month, Status, Units, Bill, and Payment details.
-• **Protected / Non-Protected Calculation:** Added automated Protected/Non-Protected status evaluation strictly for A-1A(01) tariff consumers (≤ 200 units across last 6 months), keeping all other tariffs blank.
-• **Total Units & Total Payment:** Added Total Payment and Total Units columns with native numeric formatting placed right next to each other.
-• **BNo, SDiv & Meter Type:** Added BNo (batch no), SDiv (5-digit sub-division code), and Meter Type (S-P / 3-P) extraction alongside AutoFilter support on Excel headings.
+• **Auto-Updater Resilience & Direct Proxy Delivery:** Fixed update download URL forwarding to ensure silent and manual updates directly download the latest installer from the secure API proxy.
+• **Dynamic API Fallback:** Added automated recovery to query the latest release endpoints directly if download URLs are omitted, permanently preventing stale installer update loops.
+• **Bill Scrapper — Billing History & Details:** Retains full 1-Year/6-Months history extraction, A-1A(01) Protected status calculation, Total Units & Payment, and metadata fields.

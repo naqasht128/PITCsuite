@@ -27,6 +27,11 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.96": [
+        "<b>Auto-Updater Resilience & Direct Proxy Delivery:</b> Fixed update download URL forwarding to ensure silent and manual updates directly download the latest installer from the secure API proxy.",
+        "<b>Dynamic API Fallback:</b> Added automated recovery to query the latest release endpoints directly if download URLs are omitted, permanently preventing stale installer update loops.",
+        "<b>Bill Scrapper — Billing History & Details:</b> Retains full 1-Year/6-Months history extraction, A-1A(01) Protected status calculation, Total Units & Payment, and metadata fields."
+    ],
     "v2.8.95": [
         "<b>Bill Scrapper — Billing/Payment History:</b> Added 1-Year (11 historical months) and 6-Months (5 historical months) history extraction options with Month, Status, Units, Bill, and Payment details.",
         "<b>Protected / Non-Protected Calculation:</b> Added automated Protected/Non-Protected status evaluation strictly for A-1A(01) tariff consumers (≤ 200 units across last 6 months), keeping all other tariffs blank.",
@@ -641,7 +646,10 @@ def check_for_updates(parent_window, silent=False):
         if has_update:
             if silent:
                 if hasattr(parent_window, 'notify_update_available'):
-                    parent_window.notify_update_available(latest_tag, notes)
+                    try:
+                        parent_window.notify_update_available(latest_tag, notes, download_url=download_url)
+                    except TypeError:
+                        parent_window.notify_update_available(latest_tag, notes)
             else:
                 dlg = UpdateAvailableDialog(get_current_version(), latest_tag, notes, parent_window)
                 if dlg.exec() == QDialog.Accepted:
@@ -669,7 +677,23 @@ def start_download(parent_window, latest_tag=None, notes=None, download_url=None
     progress_dialog.resize(420, 110)
 
     dest_path = os.path.join(os.environ.get("TEMP", "C:\\Temp"), "PITCSuite_Setup.exe")
-    target_source = download_url if download_url else GDRIVE_SETUP_FILE_ID
+    
+    # Resolve target_source: prefer direct/API download_url over obsolete Google Drive fallback
+    target_source = download_url
+    if not target_source or target_source == GDRIVE_SETUP_FILE_ID:
+        try:
+            from pitcsuite.license_manager import get_api_base_url
+            api_url = get_api_base_url()
+            resp = requests.get(f"{api_url}/api/updates/latest", timeout=6)
+            if resp.status_code == 200:
+                remote_url = resp.json().get("download_url")
+                if remote_url and remote_url.startswith("http"):
+                    target_source = remote_url
+        except Exception:
+            pass
+
+    if not target_source:
+        target_source = GDRIVE_SETUP_FILE_ID
     
     downloader = DownloadThread(target_source, dest_path)
     parent_window._downloader = downloader  # Prevent GC crash
