@@ -1,9 +1,10 @@
 import os
 import shutil
 import threading
+import configparser
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Signal, QSettings
 from PySide6.QtWidgets import (
     QFileDialog, QComboBox, QCheckBox, QDoubleSpinBox, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QMessageBox, QPushButton, QTextEdit, QProgressBar, QVBoxLayout, QWidget,
@@ -11,6 +12,7 @@ from PySide6.QtWidgets import (
 
 from pitcsuite.templates import download_template
 from pitcsuite.ui_helpers import START_BTN, STOP_BTN, hline, lbl, notify
+from pitcsuite.config import config_path as _config_path
 
 
 class CP22TWorker(QThread):
@@ -104,8 +106,13 @@ class BillScraperWorker(QThread):
     done = Signal(str, bool)
     failed = Signal(str)
 
-    def __init__(self, path, delay, stop_event, history_mode=None):
-        super().__init__(); self.path = Path(path); self.delay = delay; self.stop_event = stop_event; self.history_mode = history_mode
+    def __init__(self, path, delay, stop_event, history_mode=None, url=None):
+        super().__init__()
+        self.path = Path(path)
+        self.delay = delay
+        self.stop_event = stop_event
+        self.history_mode = history_mode
+        self.url = url
 
     def run(self):
         try:
@@ -121,7 +128,7 @@ class BillScraperWorker(QThread):
             def log_callback(msg):
                 self.log_msg.emit(msg)
 
-            PITCBillScraper(delay=self.delay, history_mode=self.history_mode).update_workbook(self.path, progress, self.stop_event, log_callback=log_callback)
+            PITCBillScraper(delay=self.delay, history_mode=self.history_mode, url=self.url).update_workbook(self.path, progress, self.stop_event, log_callback=log_callback)
             self.done.emit(str(self.path), self.stop_event.is_set())
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -134,9 +141,24 @@ class BillScraperPanel(QWidget):
         layout.addWidget(lbl("PITC Bill Scrapper", bold=True, color="#7eb8f7"))
         layout.addWidget(lbl("Update an Excel workbook with live PITC bill details.", color="#556")); layout.addWidget(hline())
         group = QGroupBox("Workbook")
-        form = QVBoxLayout(group); row = QHBoxLayout(); row.addWidget(QLabel("Excel file:"))
+        form = QVBoxLayout(group)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Excel file:"))
         self.xlsx_ed = QLineEdit(); self.xlsx_ed.setReadOnly(True); self.xlsx_ed.setProperty("preferred_width", 245); row.addWidget(self.xlsx_ed, 1)
         browse = QPushButton("Browse"); browse.clicked.connect(self._browse); row.addWidget(browse); form.addLayout(row)
+
+        url_row = QHBoxLayout()
+        url_row.addWidget(QLabel("Bills URL:"))
+        self.ed_url = QLineEdit(self._load_url())
+        self.ed_url.setReadOnly(True)
+        self.ed_url.setProperty("preferred_width", 310)
+        url_row.addWidget(self.ed_url, 1)
+        self.ed_url.returnPressed.connect(lambda: self._toggle_url() if self.btn_url.text() == "Save" else None)
+        self.btn_url = QPushButton("Edit")
+        self.btn_url.clicked.connect(self._toggle_url)
+        url_row.addWidget(self.btn_url)
+        form.addLayout(url_row)
+
         options = QHBoxLayout(); options.addWidget(QLabel("Delay between bills (seconds):"))
         self.delay = QDoubleSpinBox(); self.delay.setRange(0.1, 30); self.delay.setSingleStep(.1); self.delay.setValue(2.0); options.addWidget(self.delay); options.addStretch(); form.addLayout(options)
 
@@ -159,6 +181,64 @@ class BillScraperPanel(QWidget):
         layout.addWidget(self.progress_bar)
         self.log_box = QTextEdit(); self.log_box.setReadOnly(True); layout.addWidget(self.log_box)
 
+    def _load_url(self):
+        url = None
+        try:
+            settings = QSettings("TNDevelopers", "PITCSuite")
+            if settings.contains("bill_scraper_url"):
+                val = str(settings.value("bill_scraper_url")).strip()
+                if val:
+                    url = val
+        except Exception:
+            pass
+
+        if not url:
+            try:
+                cfg = configparser.ConfigParser()
+                path = _config_path()
+                if os.path.exists(path):
+                    cfg.read(path)
+                    val = cfg.get("bill_scraper", "url", fallback="").strip()
+                    if val:
+                        url = val
+            except Exception:
+                pass
+
+        return url or "https://bill.pitc.com.pk/pescobill"
+
+    def _save_url(self, url):
+        url = (url or "").strip()
+        if not url:
+            return
+        try:
+            settings = QSettings("TNDevelopers", "PITCSuite")
+            settings.setValue("bill_scraper_url", url)
+        except Exception:
+            pass
+
+        try:
+            path = _config_path()
+            cfg = configparser.ConfigParser()
+            if os.path.exists(path):
+                cfg.read(path)
+            if not cfg.has_section("bill_scraper"):
+                cfg.add_section("bill_scraper")
+            cfg.set("bill_scraper", "url", url)
+            with open(path, "w", encoding="utf-8") as f:
+                cfg.write(f)
+        except Exception:
+            pass
+
+    def _toggle_url(self):
+        if self.btn_url.text() == "Edit":
+            self.ed_url.setReadOnly(False)
+            self.btn_url.setText("Save")
+            self.ed_url.setFocus()
+        else:
+            self.ed_url.setReadOnly(True)
+            self.btn_url.setText("Edit")
+            self._save_url(self.ed_url.text().strip())
+
     def _toggle_1yr(self, checked):
         if checked:
             self.chk_history_6mo.setChecked(False)
@@ -175,6 +255,11 @@ class BillScraperPanel(QWidget):
         path = Path(self.xlsx_ed.text().strip())
         if not path.is_file(): QMessageBox.warning(self, "Input required", "Choose an existing workbook first."); return
         if not QMessageBox.question(self, "Update workbook", "The workbook will be updated in place. Continue?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes: return
+        url = self.ed_url.text().strip()
+        self._save_url(url)
+        if self.btn_url.text() == "Save":
+            self.ed_url.setReadOnly(True)
+            self.btn_url.setText("Edit")
         self.stop_event.clear(); self.log_box.clear(); self.start_btn.setEnabled(False); self.stop_btn.setEnabled(True)
         self.chk_history_1yr.setEnabled(False); self.chk_history_6mo.setEnabled(False)
         self.progress_bar.setRange(0, 1); self.progress_bar.setValue(0)
@@ -185,7 +270,7 @@ class BillScraperPanel(QWidget):
         elif self.chk_history_6mo.isChecked():
             history_mode = "6mo"
 
-        self.worker = BillScraperWorker(path, self.delay.value(), self.stop_event, history_mode=history_mode)
+        self.worker = BillScraperWorker(path, self.delay.value(), self.stop_event, history_mode=history_mode, url=url)
         self.worker.progress.connect(self._progress); self.worker.log_msg.connect(self._log); self.worker.done.connect(self._done); self.worker.failed.connect(self._failed); self.worker.start()
 
     def _stop(self):

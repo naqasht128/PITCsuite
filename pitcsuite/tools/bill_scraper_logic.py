@@ -700,10 +700,11 @@ def load_spreadsheet(path):
 
 
 class PITCBillScraper:
-    def __init__(self, delay=2.0, timeout=90, history_mode=None):
+    def __init__(self, delay=2.0, timeout=90, history_mode=None, url=None):
         self.delay = delay
         self.timeout = timeout
         self.history_mode = history_mode
+        self.url = (url or URL).strip().rstrip('/')
 
     @staticmethod
     def put(output, name, value):
@@ -1101,14 +1102,15 @@ class PITCBillScraper:
     def search(self, account, stop_event=None, log_callback=None):
         session = requests.Session()
         session.headers.update({"User-Agent": "Mozilla/5.0 (compatible; PITC-Bill-Exporter/1.0)"})
-        page = self._fetch_url_with_retry(session, "get", URL, stop_event=stop_event, log_callback=log_callback)
+        target_url = getattr(self, "url", URL)
+        page = self._fetch_url_with_retry(session, "get", target_url, stop_event=stop_event, log_callback=log_callback)
         soup = BeautifulSoup(page.text, "html.parser")
         form = soup.select_one("form#SubmitForm") or soup.find("form")
         if not form:
             raise RuntimeError("PITC search form was not found")
         payload = {i["name"]: i.get("value", "") for i in form.select("input[type=hidden][name]")}
         payload.update({"rbSearchByList": "refno", "searchTextBox": account, "ruCodeTextBox": "", "btnSearch": "Search"})
-        result = self._fetch_url_with_retry(session, "post", URL, data=payload, stop_event=stop_event, log_callback=log_callback)
+        result = self._fetch_url_with_retry(session, "post", target_url, data=payload, stop_event=stop_event, log_callback=log_callback)
         if "CONSUMER DETAIL" not in result.text.upper() and "CONSUMER DETAILS" not in result.text.upper():
             raise RuntimeError(clean(BeautifulSoup(result.text, "html.parser").get_text(" "))[:300] or "No bill returned")
         return BeautifulSoup(result.text, "html.parser")
@@ -1523,6 +1525,7 @@ class BillScraperApp(tk.Tk):
         self.events = queue.Queue()
         self.stop_event = threading.Event()
         self.input_var = tk.StringVar()
+        self.url_var = tk.StringVar(value=self._load_url())
         self.delay_var = tk.DoubleVar(value=2.0)
         self.history_1yr_var = tk.BooleanVar(value=False)
         self.history_6mo_var = tk.BooleanVar(value=False)
@@ -1535,6 +1538,50 @@ class BillScraperApp(tk.Tk):
 
         self.build_ui()
         self.after(100, self.drain_events)
+
+    def _load_url(self):
+        try:
+            from pitcsuite.config import config_path as _cfg_p
+            import configparser
+            path = _cfg_p()
+            if os.path.exists(path):
+                cfg = configparser.ConfigParser()
+                cfg.read(path)
+                val = cfg.get("bill_scraper", "url", fallback="").strip()
+                if val:
+                    return val
+        except Exception:
+            pass
+        return URL
+
+    def _save_url(self, url):
+        url = (url or "").strip()
+        if not url:
+            return
+        try:
+            from pitcsuite.config import config_path as _cfg_p
+            import configparser
+            path = _cfg_p()
+            cfg = configparser.ConfigParser()
+            if os.path.exists(path):
+                cfg.read(path)
+            if not cfg.has_section("bill_scraper"):
+                cfg.add_section("bill_scraper")
+            cfg.set("bill_scraper", "url", url)
+            with open(path, "w", encoding="utf-8") as f:
+                cfg.write(f)
+        except Exception:
+            pass
+
+    def _toggle_url(self):
+        if self.url_btn.cget("text") == "Edit":
+            self.url_entry.configure(state="normal")
+            self.url_btn.configure(text="Save")
+            self.url_entry.focus()
+        else:
+            self.url_entry.configure(state="readonly")
+            self.url_btn.configure(text="Edit")
+            self._save_url(self.url_var.get().strip())
 
     def _on_toggle_history_1yr(self):
         if self.history_1yr_var.get():
@@ -1566,6 +1613,15 @@ class BillScraperApp(tk.Tk):
 
         browse_btn = ttk.Button(files_frame, text="Browse...", command=self.choose_input)
         browse_btn.grid(row=0, column=2, pady=4)
+
+        ttk.Label(files_frame, text="Bills URL:", font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky="w", pady=4)
+        self.url_entry = ttk.Entry(files_frame, textvariable=self.url_var, font=("Segoe UI", 9), state="readonly")
+        self.url_entry.grid(row=1, column=1, sticky="ew", padx=(8, 8), pady=4)
+        self.url_entry.bind("<Return>", lambda e: self._toggle_url() if self.url_btn.cget("text") == "Save" else None)
+
+        self.url_btn = ttk.Button(files_frame, text="Edit", command=self._toggle_url)
+        self.url_btn.grid(row=1, column=2, pady=4)
+
         files_frame.columnconfigure(1, weight=1)
 
         mid_frame = ttk.Frame(root)
@@ -1719,9 +1775,15 @@ class BillScraperApp(tk.Tk):
         elif history_mode == "6mo":
             self.write_log("Billing Payment History: 6 Months (5 historical months) enabled", "info")
 
-        threading.Thread(target=self.run, args=(path, delay, history_mode), daemon=True).start()
+        url = self.url_var.get().strip()
+        self._save_url(url)
+        if self.url_btn.cget("text") == "Save":
+            self.url_entry.configure(state="readonly")
+            self.url_btn.configure(text="Edit")
 
-    def run(self, path, delay, history_mode=None):
+        threading.Thread(target=self.run, args=(path, delay, history_mode, url), daemon=True).start()
+
+    def run(self, path, delay, history_mode=None, url=None):
         try:
             def progress(done, total, row):
                 raw_status = row.get("Remarks") or row.get("scrape_status", "")
@@ -1734,7 +1796,7 @@ class BillScraperApp(tk.Tk):
             def log_cb(msg):
                 self.events.put(("log", msg))
 
-            PITCBillScraper(delay=delay, history_mode=history_mode).update_workbook(path, progress, self.stop_event, log_callback=log_cb)
+            PITCBillScraper(delay=delay, history_mode=history_mode, url=url).update_workbook(path, progress, self.stop_event, log_callback=log_cb)
             self.events.put(("done", str(path), self.stop_event.is_set()))
         except Exception as exc:
             self.events.put(("error", str(exc)))

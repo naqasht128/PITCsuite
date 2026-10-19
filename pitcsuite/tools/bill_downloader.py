@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGroupBox, QMessageBox, QComboBox,
     QSpinBox
 )
-from PySide6.QtCore import Signal, QObject, QThread
+from PySide6.QtCore import Signal, QObject, QThread, QSettings
 
 from pitcsuite.ui_helpers import lbl, hline, START_BTN, STOP_BTN, notify
 from pitcsuite.templates import download_template
@@ -84,9 +84,58 @@ class BillSoftPanel(QWidget):
         b = QPushButton("Browse"); b.clicked.connect(lambda: (p := QFileDialog.getOpenFileName(self,"Excel","","Excel (*.xlsx)")[0]) and self.ed_excel.setText(p)); r.addWidget(b)
         return r
 
+    def _load_saved_url(self):
+        url = None
+        try:
+            settings = QSettings("TNDevelopers", "PITCSuite")
+            if settings.contains("bill_downloader_url"):
+                val = str(settings.value("bill_downloader_url")).strip()
+                if val:
+                    url = val
+        except Exception:
+            pass
+
+        if not url:
+            try:
+                cfg = configparser.ConfigParser()
+                path = _config_path()
+                if os.path.exists(path):
+                    cfg.read(path)
+                    val = cfg.get("bill_downloader", "url", fallback="").strip()
+                    if val:
+                        url = val
+            except Exception:
+                pass
+
+        return url or "https://bill.pitc.com.pk/pescobill"
+
+    def _save_url(self, url):
+        url = (url or "").strip()
+        if not url:
+            return
+        try:
+            settings = QSettings("TNDevelopers", "PITCSuite")
+            settings.setValue("bill_downloader_url", url)
+        except Exception:
+            pass
+
+        try:
+            path = _config_path()
+            cfg = configparser.ConfigParser()
+            if os.path.exists(path):
+                cfg.read(path)
+            if not cfg.has_section("bill_downloader"):
+                cfg.add_section("bill_downloader")
+            cfg.set("bill_downloader", "url", url)
+            with open(path, "w", encoding="utf-8") as f:
+                cfg.write(f)
+        except Exception:
+            pass
+
     def _url_row(self):
         r = QHBoxLayout(); r.addWidget(QLabel("Bills URL:"))
-        self.ed_url = QLineEdit("https://bill.pitc.com.pk/pescobill/"); self.ed_url.setReadOnly(True); self.ed_url.setProperty("preferred_width", 310); r.addWidget(self.ed_url, 1)
+        self.ed_url = QLineEdit(self._load_saved_url()); self.ed_url.setReadOnly(True); self.ed_url.setProperty("preferred_width", 310); r.addWidget(self.ed_url, 1)
+        self.ed_url.returnPressed.connect(lambda: self.toggle_url() if self.btn_url.text() == "Save" else None)
         self.btn_url = QPushButton("Edit"); self.btn_url.clicked.connect(self.toggle_url); r.addWidget(self.btn_url)
         return r
 
@@ -100,13 +149,19 @@ class BillSoftPanel(QWidget):
     def toggle_url(self):
         if self.btn_url.text() == "Edit":
             self.ed_url.setReadOnly(False); self.btn_url.setText("Save")
+            self.ed_url.setFocus()
         else:
             self.ed_url.setReadOnly(True); self.btn_url.setText("Edit")
+            self._save_url(self.ed_url.text().strip())
 
     def start_stop(self):
         if self.btn_start.text().endswith("START"):
             if not self.ed_excel.text():
                 QMessageBox.warning(self, "Error", "Select Excel file first"); return
+            self._save_url(self.ed_url.text().strip())
+            if self.btn_url.text() == "Save":
+                self.ed_url.setReadOnly(True)
+                self.btn_url.setText("Edit")
             self.stop_flag = False; self.pause_flag = False
             self.btn_start.setText("■  STOP"); self.btn_start.setStyleSheet(STOP_BTN)
             job = (self.ed_excel.text(), self.ed_out.text(), self.ed_url.text(),

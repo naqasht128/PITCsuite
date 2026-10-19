@@ -37,7 +37,7 @@ class PITCWorker(QThread):
 
     def __init__(self, excel, report_key, download_dir, profile_dir,
                  restart_after, warmup, print_wait, print_x, print_y,
-                 page_from=None, page_to=None, match_mode="first"):
+                 page_from=None, page_to=None, match_mode="first", disco="PESCO"):
         super().__init__()
         self.excel         = excel
         self.report_key    = report_key
@@ -51,6 +51,7 @@ class PITCWorker(QThread):
         self.page_from     = page_from
         self.page_to       = page_to
         self.match_mode    = match_mode
+        self.disco         = disco or "PESCO"
         self.running       = True
         self.stopped       = False
         self._driver       = None
@@ -382,11 +383,51 @@ class PITCWorker(QThread):
             return drv, WebDriverWait(drv, 40)
 
         def do_login(drv, wt):
+            selected_disco = getattr(self, "disco", "PESCO")
+            self.log.emit(f"Opening cp.pitc.com.pk (DISCO: {selected_disco})…")
             drv.get("https://cp.pitc.com.pk")
-            wt.until(EC.element_to_be_clickable((By.XPATH, "//button[@data-id='ctl00_ContentPlaceHolder1_cmbSelectDisco']"))).click()
-            wt.until(EC.element_to_be_clickable((By.XPATH, "//span[text()='PESCO']"))).click()
-            wt.until(EC.presence_of_element_located((By.NAME, "ctl00$ContentPlaceHolder1$txtUsername"))).send_keys(USERNAME)
-            wt.until(EC.presence_of_element_located((By.NAME, "ctl00$ContentPlaceHolder1$txtPassword"))).send_keys(PASSWORD)
+
+            # 1. Select the DISCO from dropdown
+            disco_selected = False
+            try:
+                disco_btn = wt.until(EC.element_to_be_clickable(
+                    (By.XPATH, "//button[@data-id='ctl00_ContentPlaceHolder1_cmbSelectDisco']")
+                ))
+                disco_btn.click()
+                time.sleep(0.5)
+                disco_opt = wt.until(EC.element_to_be_clickable(
+                    (By.XPATH, f"//div[contains(@class,'dropdown-menu')]//span[normalize-space(text())='{selected_disco}']")
+                ))
+                disco_opt.click()
+                disco_selected = True
+                self.log.emit(f"Selected DISCO: {selected_disco} ✔")
+            except Exception as ex:
+                self.log.emit(f"Selecting DISCO via dropdown: {ex}, attempting select fallback…")
+                try:
+                    from selenium.webdriver.support.ui import Select
+                    select_elem = drv.find_element(By.ID, "ctl00_ContentPlaceHolder1_cmbSelectDisco")
+                    Select(select_elem).select_by_visible_text(selected_disco)
+                    drv.execute_script("""
+                        var sel = arguments[0];
+                        if (window.showDiv) { showDiv(sel); }
+                        if (window.$ && $.fn.selectpicker) { $(sel).selectpicker('render'); }
+                    """, select_elem)
+                    disco_selected = True
+                    self.log.emit(f"Selected DISCO via select element: {selected_disco} ✔")
+                except Exception as ex2:
+                    self.log.emit(f"Warning: could not select DISCO: {ex2}")
+
+            time.sleep(0.5)
+
+            # 2. Fill Username and Password
+            user_input = wt.until(EC.presence_of_element_located((By.NAME, "ctl00$ContentPlaceHolder1$txtUsername")))
+            user_input.clear()
+            user_input.send_keys(USERNAME)
+
+            pass_input = wt.until(EC.presence_of_element_located((By.NAME, "ctl00$ContentPlaceHolder1$txtPassword")))
+            pass_input.clear()
+            pass_input.send_keys(PASSWORD)
+
             wt.until(EC.element_to_be_clickable((By.ID, "btnLogin"))).click()
             if OTP_SECRET:
                 self.log.emit("Waiting for OTP…")
@@ -656,6 +697,10 @@ class PITCPanel(QWidget):
         "Customer Data Summary",
     ]
     REPORT_KEYS = ["meter", "billing", "adjustment", "payment", "summary"]
+    DISCOS = [
+        "PESCO", "LESCO", "GEPCO", "FESCO", "IESCO", "MEPCO",
+        "HAZECO", "SEPCO", "HESCO", "QESCO", "TESCO"
+    ]
 
     def __init__(self):
         super().__init__()
@@ -682,6 +727,15 @@ class PITCPanel(QWidget):
         r_ex.addWidget(self.excel_ed); r_ex.addWidget(b1); r_ex.addWidget(btn_tpl)
         g1v.addLayout(r_ex)
         layout.addWidget(g1)
+
+        # ── DISCO ──
+        g_disco = QGroupBox("Select DISCO")
+        g_disco_h = QHBoxLayout(g_disco)
+        self.disco_cb = QComboBox()
+        self.disco_cb.addItems(self.DISCOS)
+        self.disco_cb.setCurrentText("PESCO")
+        self.disco_cb.currentTextChanged.connect(self._on_disco_changed)
+        g_disco_h.addWidget(self.disco_cb)
 
         # ── Report Type ──
         g_rep = QGroupBox("Report Type")
@@ -721,8 +775,9 @@ class PITCPanel(QWidget):
         g_match_h.addStretch()
         report_match_row = QHBoxLayout()
         report_match_row.setSpacing(8)
-        report_match_row.addWidget(g_rep, 1)
-        report_match_row.addWidget(g_match, 1)
+        report_match_row.addWidget(g_disco, 1)
+        report_match_row.addWidget(g_rep, 2)
+        report_match_row.addWidget(g_match, 2)
         layout.addLayout(report_match_row)
 
         # Page range and print timing share the same row.
@@ -778,6 +833,41 @@ class PITCPanel(QWidget):
             if settings.contains("pitc_pwait"): self.sp_pwait.setValue(int(settings.value("pitc_pwait")))
             if settings.contains("pitc_px"): self.sp_px.setValue(int(settings.value("pitc_px")))
             if settings.contains("pitc_py"): self.sp_py.setValue(int(settings.value("pitc_py")))
+
+            saved_disco = "PESCO"
+            if settings.contains("pitc_disco"):
+                saved_disco = str(settings.value("pitc_disco")).strip() or "PESCO"
+            else:
+                cfg = configparser.ConfigParser()
+                path = _config_path()
+                if os.path.exists(path):
+                    cfg.read(path)
+                    saved_disco = cfg.get("credentials", "disco", fallback=cfg.get("pitc_downloader", "disco", fallback="PESCO"))
+            idx = self.disco_cb.findText(saved_disco)
+            if idx >= 0:
+                self.disco_cb.setCurrentIndex(idx)
+        except Exception:
+            pass
+
+    def _on_disco_changed(self, text):
+        disco = (text or "").strip()
+        if not disco:
+            return
+        try:
+            settings = QSettings("TNDevelopers", "PITCSuite")
+            settings.setValue("pitc_disco", disco)
+        except Exception:
+            pass
+        try:
+            cfg = configparser.ConfigParser()
+            path = _config_path()
+            if os.path.exists(path):
+                cfg.read(path)
+            if not cfg.has_section("credentials"):
+                cfg.add_section("credentials")
+            cfg.set("credentials", "disco", disco)
+            with open(path, "w", encoding="utf-8") as f:
+                cfg.write(f)
         except Exception:
             pass
 
@@ -801,6 +891,7 @@ class PITCPanel(QWidget):
             settings.setValue("pitc_pwait", self.sp_pwait.value())
             settings.setValue("pitc_px", self.sp_px.value())
             settings.setValue("pitc_py", self.sp_py.value())
+            settings.setValue("pitc_disco", self.disco_cb.currentText())
         except Exception:
             pass
 
@@ -845,6 +936,7 @@ class PITCPanel(QWidget):
             page_from     = page_from,
             page_to       = page_to,
             match_mode    = self.match_cb.currentData(),
+            disco         = self.disco_cb.currentText(),
         )
         self.worker.log.connect(self.log_box.append)
         self.worker.progress.connect(self.progress.setValue)

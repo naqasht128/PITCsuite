@@ -28,6 +28,11 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.98": [
+        "<b>E/Bills Downloader URL Persistence:</b> Bills URL edits now persist across app relaunches with default set to https://bill.pitc.com.pk/pescobill.",
+        "<b>PITC Report Downloader DISCO Selection:</b> Added DISCO dropdown selector with PESCO as default; persists user selection across relaunches and automates DISCO selection & credentials login on cp.pitc.com.pk.",
+        "<b>Bill Scrapper Custom Bills URL:</b> Added editable Bills URL option with system persistence for subsequent relaunches (defaults to https://bill.pitc.com.pk/pescobill)."
+    ],
     "v2.8.97": [
         "<b>Ultra-Smooth Auto-Updater (Bill Scrapper Architecture):</b> Aligned installer and updater pipeline with Bill Scrapper — unique timestamped download paths, elimination of Restart Manager stalls, and instant process termination.",
         "<b>Zero Delays & Seamless Relaunch:</b> Removed blocking dialogs and timeouts on update completion, launching the installer detached and restarting into the latest release seamlessly.",

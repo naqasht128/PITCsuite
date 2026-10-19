@@ -11,13 +11,18 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGroupBox, QMessageBox, QComboBox,
     QSpinBox
 )
-from PySide6.QtCore import Signal, QObject, QThread
+from PySide6.QtCore import Signal, QObject, QThread, QSettings
 
 from pitcsuite.ui_helpers import lbl, hline, START_BTN, STOP_BTN
 from pitcsuite.templates import download_template
 from pitcsuite.config import config_path as _config_path
 
 class SettingsPanel(QWidget):
+    DISCOS = [
+        "PESCO", "LESCO", "GEPCO", "FESCO", "IESCO", "MEPCO",
+        "HAZECO", "SEPCO", "HESCO", "QESCO", "TESCO"
+    ]
+
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self); layout.setSpacing(14)
@@ -27,6 +32,11 @@ class SettingsPanel(QWidget):
 
         g = QGroupBox("PITC Login (cp.pitc.com.pk)")
         gv = QVBoxLayout(g); gv.setSpacing(10)
+
+        r0 = QHBoxLayout()
+        r0.addWidget(QLabel("Default DISCO:")); self.disco_cb = QComboBox(); self.disco_cb.addItems(self.DISCOS)
+        self.disco_cb.setCurrentText("PESCO"); r0.addWidget(self.disco_cb, 1)
+        gv.addLayout(r0)
 
         r1 = QHBoxLayout()
         r1.addWidget(QLabel("Username:")); self.user_ed = QLineEdit(); r1.addWidget(self.user_ed, 1)
@@ -77,6 +87,14 @@ class SettingsPanel(QWidget):
         self.load()
 
     def load(self):
+        saved_disco = "PESCO"
+        try:
+            settings = QSettings("TNDevelopers", "PITCSuite")
+            if settings.contains("pitc_disco"):
+                saved_disco = str(settings.value("pitc_disco")).strip() or "PESCO"
+        except Exception:
+            pass
+
         path = _config_path()
         cfg = configparser.ConfigParser()
         if os.path.exists(path):
@@ -84,22 +102,41 @@ class SettingsPanel(QWidget):
             self.user_ed.setText(cfg.get("credentials", "username", fallback=""))
             self.pass_ed.setText(cfg.get("credentials", "password", fallback=""))
             self.otp_ed.setText(cfg.get("credentials", "otp_secret", fallback=""))
+            saved_disco = cfg.get("credentials", "disco", fallback=cfg.get("pitc_downloader", "disco", fallback=saved_disco))
             self.status_lbl.setText("")
         else:
             self.status_lbl.setText("⚠  config.ini not found — will be created on Save.")
             self.status_lbl.setStyleSheet("color:#ca4; font-size:11px;")
 
+        idx = self.disco_cb.findText(saved_disco)
+        if idx >= 0:
+            self.disco_cb.setCurrentIndex(idx)
+
     def save(self):
         username   = self.user_ed.text().strip()
         password   = self.pass_ed.text().strip()
         otp_secret = self.otp_ed.text().strip()
+        disco      = self.disco_cb.currentText().strip() or "PESCO"
         if not username or not password:
             QMessageBox.warning(self, "Missing", "Username and password cannot be empty."); return
 
+        try:
+            settings = QSettings("TNDevelopers", "PITCSuite")
+            settings.setValue("pitc_disco", disco)
+        except Exception:
+            pass
+
         path = _config_path()
         cfg = configparser.ConfigParser()
-        cfg["credentials"] = {"username": username, "password": password, "otp_secret": otp_secret}
-        with open(path, "w") as f:
+        if os.path.exists(path):
+            cfg.read(path)
+        if not cfg.has_section("credentials"):
+            cfg.add_section("credentials")
+        cfg.set("credentials", "username", username)
+        cfg.set("credentials", "password", password)
+        cfg.set("credentials", "otp_secret", otp_secret)
+        cfg.set("credentials", "disco", disco)
+        with open(path, "w", encoding="utf-8") as f:
             cfg.write(f)
 
         self.status_lbl.setText("✔  Saved successfully.")

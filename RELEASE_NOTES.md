@@ -1,3 +1,3 @@
-• **Ultra-Smooth Auto-Updater (Bill Scrapper Architecture):** Aligned installer and updater pipeline with Bill Scrapper — unique timestamped download paths, elimination of Restart Manager stalls, and instant process termination.
-• **Zero Delays & Seamless Relaunch:** Removed blocking dialogs and timeouts on update completion, launching the installer detached and restarting into the latest release seamlessly.
-• **Bill Scrapper — Billing History & Analysis:** Full 1-Year/6-Months history extraction, A-1A(01) Protected status calculation, and native numeric Excel formatting.
+• **E/Bills Downloader URL Persistence:** Bills URL edits now persist across app relaunches with default set to https://bill.pitc.com.pk/pescobill.
+• **PITC Report Downloader DISCO Selection:** Added DISCO dropdown selector with PESCO as default; persists user selection across relaunches and automates DISCO selection & credentials login on cp.pitc.com.pk.
+• **Bill Scrapper Custom Bills URL:** Added editable Bills URL option with system persistence for subsequent relaunches (defaults to https://bill.pitc.com.pk/pescobill).
