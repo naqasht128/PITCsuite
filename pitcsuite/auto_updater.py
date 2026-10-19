@@ -206,26 +206,75 @@ class DownloadThread(QThread):
     finished = Signal(str)
     error = Signal(str)
 
-    def __init__(self, target: str, dest: str):
+    def __init__(self, target: str, dest: str, expected_size: int = 0):
         super().__init__()
         self.target = target
         self.dest = dest
+        self.expected_size = expected_size
+        self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
 
     def run(self):
         try:
             # 1. Direct or Vercel Proxy streaming URL (HTTP/HTTPS)
             if self.target and (self.target.startswith("http://") or self.target.startswith("https://")) and "docs.google.com" not in self.target and "drive.google.com" not in self.target:
                 session = requests.Session()
-                response = session.get(self.target, stream=True, timeout=30)
+                headers = {
+                    "User-Agent": "PITCSuite-DesktopApp",
+                    "Accept-Encoding": "identity",
+                }
+                response = session.get(self.target, headers=headers, stream=True, timeout=30)
                 response.raise_for_status()
-                total_size = int(response.headers.get('content-length', 0))
+
+                # Extract total_size reliably
+                total_size = 0
+                cl = response.headers.get('content-length')
+                if cl:
+                    try:
+                        total_size = int(cl)
+                    except (ValueError, TypeError):
+                        pass
+                if total_size <= 0:
+                    cr = response.headers.get('content-range')
+                    if cr and '/' in cr:
+                        try:
+                            total_size = int(cr.split('/')[-1].strip())
+                        except (ValueError, TypeError):
+                            pass
+                if total_size <= 0 and self.expected_size > 0:
+                    total_size = int(self.expected_size)
+
+                # Fallback to quick HEAD request with identity encoding
+                if total_size <= 0:
+                    try:
+                        head_resp = session.head(self.target, headers=headers, allow_redirects=True, timeout=6)
+                        head_cl = head_resp.headers.get('content-length')
+                        if head_cl:
+                            total_size = int(head_cl)
+                    except Exception:
+                        pass
+
                 downloaded = 0
+                self.progress.emit(0, total_size)
                 with open(self.dest, "wb") as f:
                     for chunk in response.iter_content(chunk_size=65536):
+                        if self._is_cancelled:
+                            break
                         if chunk:
                             f.write(chunk)
                             downloaded += len(chunk)
                             self.progress.emit(downloaded, total_size)
+
+                if self._is_cancelled:
+                    try:
+                        if os.path.exists(self.dest):
+                            os.remove(self.dest)
+                    except Exception:
+                        pass
+                    return
+
                 self.finished.emit(self.dest)
                 return
 
@@ -233,7 +282,11 @@ class DownloadThread(QThread):
             file_id = self.target if self.target and not self.target.startswith("http") else GDRIVE_SETUP_FILE_ID
             url = "https://docs.google.com/uc?export=download"
             session = requests.Session()
-            response = session.get(url, params={'id': file_id}, stream=True)
+            headers = {
+                "User-Agent": "PITCSuite-DesktopApp",
+                "Accept-Encoding": "identity",
+            }
+            response = session.get(url, params={'id': file_id}, headers=headers, stream=True)
             
             if "text/html" in response.headers.get("Content-Type", ""):
                 text = response.text
@@ -241,7 +294,7 @@ class DownloadThread(QThread):
                 if match:
                     uuid_val = match.group(1)
                     final_url = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t&uuid={uuid_val}"
-                    response = session.get(final_url, stream=True)
+                    response = session.get(final_url, headers=headers, stream=True)
                 else:
                     token = None
                     for key, value in response.cookies.items():
@@ -255,25 +308,53 @@ class DownloadThread(QThread):
                     final_url = f"{url}&id={file_id}"
                     if token:
                         final_url += f"&confirm={token}"
-                    response = session.get(final_url, stream=True)
+                    response = session.get(final_url, headers=headers, stream=True)
 
             response.raise_for_status()
-            total_size = int(response.headers.get('content-length', 0))
-            
+
+            total_size = 0
+            cl = response.headers.get('content-length')
+            if cl:
+                try:
+                    total_size = int(cl)
+                except (ValueError, TypeError):
+                    pass
+            if total_size <= 0:
+                cr = response.headers.get('content-range')
+                if cr and '/' in cr:
+                    try:
+                        total_size = int(cr.split('/')[-1].strip())
+                    except (ValueError, TypeError):
+                        pass
+            if total_size <= 0 and self.expected_size > 0:
+                total_size = int(self.expected_size)
+
             downloaded = 0
+            self.progress.emit(0, total_size)
             with open(self.dest, "wb") as file:
                 for chunk in response.iter_content(chunk_size=16384):
+                    if self._is_cancelled:
+                        break
                     if chunk:
                         file.write(chunk)
                         downloaded += len(chunk)
                         self.progress.emit(downloaded, total_size)
+
+            if self._is_cancelled:
+                try:
+                    if os.path.exists(self.dest):
+                        os.remove(self.dest)
+                except Exception:
+                    pass
+                return
+
             self.finished.emit(self.dest)
         except Exception as e:
             self.error.emit(str(e))
 
 
 class UpdateChecker(QThread):
-    result = Signal(bool, str, list, str)  # update_available, version_string, release_notes, download_url
+    result = Signal(bool, str, list, str, int)  # update_available, version_string, release_notes, download_url, file_size
 
     def run(self):
         # 1. Primary: Check secure Vercel License/Update API
@@ -288,6 +369,7 @@ class UpdateChecker(QThread):
                 if raw_ver:
                     clean_tag = f"v{raw_ver.lstrip('vV')}"
                     download_url = str(data.get("download_url", "")).strip()
+                    file_size = int(data.get("file_size", 0) or 0)
                     server_notes = data.get("release_notes", "")
 
                     notes_list = []
@@ -313,10 +395,10 @@ class UpdateChecker(QThread):
                     v_latest = version.parse(clean_tag.lstrip('vV'))
                     v_current = version.parse(get_current_version().lstrip('vV'))
                     if v_latest > v_current:
-                        self.result.emit(True, clean_tag, notes_list, download_url)
+                        self.result.emit(True, clean_tag, notes_list, download_url, file_size)
                         return
                     else:
-                        self.result.emit(False, clean_tag, notes_list, download_url)
+                        self.result.emit(False, clean_tag, notes_list, download_url, file_size)
                         return
         except Exception:
             pass
@@ -339,19 +421,19 @@ class UpdateChecker(QThread):
                 ] if remote_notes else []
                 notes = clean_remote if clean_remote else get_release_notes(latest_tag)
                 if v_latest > v_current:
-                    self.result.emit(True, latest_tag, notes, GDRIVE_SETUP_FILE_ID)
+                    self.result.emit(True, latest_tag, notes, GDRIVE_SETUP_FILE_ID, 0)
                     return
                 else:
-                    self.result.emit(False, latest_tag, notes, "")
+                    self.result.emit(False, latest_tag, notes, "", 0)
                     return
             clean_remote = [
                 n for n in remote_notes 
                 if not re.search(r'(?:full\s*changelog|github\.com/.+/compare|compare/v\d|\/compare\/)', n, re.I)
             ] if remote_notes else []
             notes = clean_remote if clean_remote else get_release_notes(latest_tag or get_current_version())
-            self.result.emit(False, latest_tag, notes, "")
+            self.result.emit(False, latest_tag, notes, "", 0)
         except Exception:
-            self.result.emit(False, "", [], "")
+            self.result.emit(False, "", [], "", 0)
 
 
 class UpdateAvailableDialog(QDialog):
@@ -648,18 +730,21 @@ def check_for_updates(parent_window, silent=False):
     checker = UpdateChecker(parent_window)
     parent_window._update_checker = checker  # Prevent GC
     
-    def on_result(has_update, latest_tag, notes, download_url=""):
+    def on_result(has_update, latest_tag, notes, download_url="", file_size=0):
         if has_update:
             if silent:
                 if hasattr(parent_window, 'notify_update_available'):
                     try:
-                        parent_window.notify_update_available(latest_tag, notes, download_url=download_url)
+                        parent_window.notify_update_available(latest_tag, notes, download_url=download_url, file_size=file_size)
                     except TypeError:
-                        parent_window.notify_update_available(latest_tag, notes)
+                        try:
+                            parent_window.notify_update_available(latest_tag, notes, download_url=download_url)
+                        except TypeError:
+                            parent_window.notify_update_available(latest_tag, notes)
             else:
                 dlg = UpdateAvailableDialog(get_current_version(), latest_tag, notes, parent_window)
                 if dlg.exec() == QDialog.Accepted:
-                    start_download(parent_window, latest_tag, notes, download_url=download_url)
+                    start_download(parent_window, latest_tag, notes, download_url=download_url, file_size=file_size)
         else:
             if not silent:
                 if latest_tag == "":
@@ -672,7 +757,7 @@ def check_for_updates(parent_window, silent=False):
     checker.start()
 
 
-def start_download(parent_window, latest_tag=None, notes=None, download_url=None):
+def start_download(parent_window, latest_tag=None, notes=None, download_url=None, file_size=0):
     """Downloads update setup installer and executes detached silent install matching BillScrapper."""
     progress_dialog = QProgressDialog("Connecting to update server...", "Cancel", 0, 100, parent_window)
     ver_str = f" ({latest_tag})" if latest_tag else ""
@@ -694,27 +779,33 @@ def start_download(parent_window, latest_tag=None, notes=None, download_url=None
             api_url = get_api_base_url()
             resp = requests.get(f"{api_url}/api/updates/latest", timeout=6)
             if resp.status_code == 200:
-                remote_url = resp.json().get("download_url")
+                data = resp.json()
+                remote_url = data.get("download_url")
                 if remote_url and remote_url.startswith("http"):
                     target_source = remote_url
+                if not file_size:
+                    file_size = int(data.get("file_size", 0) or 0)
         except Exception:
             pass
 
     if not target_source:
         target_source = GDRIVE_SETUP_FILE_ID
     
-    downloader = DownloadThread(target_source, dest_path)
+    downloader = DownloadThread(target_source, dest_path, expected_size=file_size)
     parent_window._downloader = downloader  # Prevent GC crash
     
     def on_progress(downloaded, total):
         if total > 0:
-            percent = int((downloaded / total) * 100)
+            percent = min(100, max(0, int((downloaded / total) * 100)))
+            if progress_dialog.maximum() != 100:
+                progress_dialog.setRange(0, 100)
             progress_dialog.setValue(percent)
             dl_mb = downloaded / (1024 * 1024)
             tot_mb = total / (1024 * 1024)
             progress_dialog.setLabelText(f"Downloading update... {percent}% ({dl_mb:.1f} MB / {tot_mb:.1f} MB)")
         else:
-            progress_dialog.setValue(0)
+            if progress_dialog.maximum() != 0:
+                progress_dialog.setRange(0, 0)
             dl_mb = downloaded / (1024 * 1024)
             progress_dialog.setLabelText(f"Downloading update... ({dl_mb:.1f} MB)")
 
@@ -772,6 +863,7 @@ def start_download(parent_window, latest_tag=None, notes=None, download_url=None
         os._exit(0)
 
     def on_finished(path):
+        progress_dialog.setRange(0, 100)
         progress_dialog.setValue(100)
         progress_dialog.setLabelText("Download complete! Restarting to apply update...")
         progress_dialog.setCancelButton(None)
@@ -784,11 +876,16 @@ def start_download(parent_window, latest_tag=None, notes=None, download_url=None
         progress_dialog.close()
         QMessageBox.critical(parent_window, "Download Failed", f"An error occurred while downloading the update:\n{err}")
 
+    def on_cancel():
+        downloader.cancel()
+        downloader.terminate()
+        progress_dialog.close()
+
     downloader.progress.connect(on_progress)
     downloader.finished.connect(on_finished)
     downloader.error.connect(on_error)
     
-    progress_dialog.canceled.connect(downloader.terminate)
+    progress_dialog.canceled.connect(on_cancel)
     
     downloader.start()
     progress_dialog.show()

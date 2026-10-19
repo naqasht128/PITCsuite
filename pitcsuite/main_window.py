@@ -557,11 +557,12 @@ class MainWindow(QMainWindow):
         self.nav_collapsed = not self.nav_collapsed
         self._apply_nav_state()
 
-    def notify_update_available(self, latest_tag=None, notes=None, download_url=None):
+    def notify_update_available(self, latest_tag=None, notes=None, download_url=None, file_size=0):
         self._has_update = True
         self._latest_tag = latest_tag
         self._latest_notes = notes
         self._download_url = download_url
+        self._latest_file_size = file_size
         self.update_btn.setStyleSheet("""
             QPushButton {
                 background: #22c55e;
@@ -583,9 +584,10 @@ class MainWindow(QMainWindow):
         if getattr(self, "_has_update", False) and getattr(self, "_latest_tag", None):
             notes = getattr(self, "_latest_notes", None) or []
             dl_url = getattr(self, "_download_url", None)
+            f_size = getattr(self, "_latest_file_size", 0)
             dlg = UpdateAvailableDialog(get_current_version(), self._latest_tag, notes, self)
             if dlg.exec() == QDialog.Accepted:
-                start_download(self, self._latest_tag, notes, download_url=dl_url)
+                start_download(self, self._latest_tag, notes, download_url=dl_url, file_size=f_size)
         else:
             check_for_updates(self, silent=False)
 
