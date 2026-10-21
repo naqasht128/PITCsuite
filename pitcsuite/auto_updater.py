@@ -18,7 +18,7 @@ from packaging import version
 from PySide6.QtWidgets import (
     QMessageBox, QProgressDialog, QApplication, QDialog,
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
-    QScrollArea, QWidget
+    QScrollArea, QWidget, QProgressBar
 )
 from PySide6.QtCore import QThread, Signal, Qt, QObject, QTimer, QSettings
 from PySide6.QtGui import QFont, QCursor
@@ -266,6 +266,10 @@ class DownloadThread(QThread):
                     except Exception:
                         pass
 
+                # If total_size is still unknown, fallback to typical installer package size (~130.5 MB)
+                if total_size <= 0:
+                    total_size = 136908774
+
                 downloaded = 0
                 self.progress.emit(0, total_size)
                 with open(self.dest, "wb") as f:
@@ -338,6 +342,8 @@ class DownloadThread(QThread):
                         pass
             if total_size <= 0 and self.expected_size > 0:
                 total_size = int(self.expected_size)
+            if total_size <= 0:
+                total_size = 136908774
 
             downloaded = 0
             self.progress.emit(0, total_size)
@@ -767,59 +773,154 @@ def check_for_updates(parent_window, silent=False):
     checker.start()
 
 
-def start_download(parent_window, latest_tag=None, notes=None, download_url=None, file_size=0):
-    """Downloads update setup installer and executes detached silent install matching BillScrapper."""
-    progress_dialog = QProgressDialog("Connecting to update server...", "Cancel", 0, 100, parent_window)
-    ver_str = f" ({latest_tag})" if latest_tag else ""
-    progress_dialog.setWindowTitle(f"Updating PITC Suite{ver_str}")
-    progress_dialog.setWindowModality(Qt.WindowModal)
-    progress_dialog.setAutoClose(False)
-    progress_dialog.setAutoReset(False)
-    progress_dialog.resize(420, 110)
+class UpdateDownloadDialog(QDialog):
+    """
+    Dedicated modal dialog displaying live download progress and applying the update.
+    Matches Bill Scrapper's UpdateDialog architecture:
+    - Vibrant green progress bar with smooth percentage text
+    - Dual status labels: activity ('Downloading update package...') and statistics ('45% (61.5 MB / 136.9 MB)')
+    - Automatic fallback size estimation so progress bar NEVER gets stuck at 0%
+    - Detached silent installation with multi-tier process termination and seamless relaunch
+    """
+    def __init__(self, version_tag: str = "", file_size: int = 0, parent=None):
+        super().__init__(parent)
+        self.version_tag = version_tag
+        self.total_size = int(file_size or 0)
+        self.is_cancelled = False
+        self.downloader: Optional[DownloadThread] = None
 
-    # Unique timestamped installer path to prevent file locking and cache collisions (matching BillScrapper)
-    fname = f"update_{int(time.time())}_PITCSuite_Setup.exe"
-    dest_path = os.path.join(tempfile.gettempdir(), fname)
-    
-    # Resolve target_source: prefer direct/API download_url over obsolete Google Drive fallback
-    target_source = download_url
-    if not target_source or target_source == GDRIVE_SETUP_FILE_ID:
-        try:
-            from pitcsuite.license_manager import get_api_base_url
-            api_url = get_api_base_url()
-            resp = requests.get(f"{api_url}/api/updates/latest", timeout=6)
-            if resp.status_code == 200:
-                data = resp.json()
-                remote_url = data.get("download_url")
-                if remote_url and remote_url.startswith("http"):
-                    target_source = remote_url
-                if not file_size:
-                    file_size = int(data.get("file_size", 0) or 0)
-        except Exception:
-            pass
+        ver_str = f" ({version_tag})" if version_tag else ""
+        self.setWindowTitle(f"Updating PITC Suite{ver_str}")
+        self.setFixedWidth(460)
+        self.setModal(True)
+        self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
+        self.setStyleSheet("""
+            QDialog {
+                background: #1e222a;
+                color: #edf0f5;
+                font-family: 'Segoe UI', Tahoma, sans-serif;
+            }
+        """)
 
-    if not target_source:
-        target_source = GDRIVE_SETUP_FILE_ID
-    
-    downloader = DownloadThread(target_source, dest_path, expected_size=file_size)
-    parent_window._downloader = downloader  # Prevent GC crash
-    
-    def on_progress(downloaded, total):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(10)
+
+        # Header Title
+        title_text = f"Downloading Update{ver_str}..."
+        self.lbl_title = QLabel(title_text)
+        self.lbl_title.setStyleSheet("color: #60a5fa; font-size: 11pt; font-weight: bold;")
+        layout.addWidget(self.lbl_title)
+
+        # Status Label
+        self.lbl_status = QLabel("Connecting to update server...")
+        self.lbl_status.setStyleSheet("color: #cbd5e1; font-size: 9pt;")
+        layout.addWidget(self.lbl_status)
+
+        # Styled Green Progress Bar (matching Bill Scrapper)
+        self.bar = QProgressBar()
+        self.bar.setRange(0, 100)
+        self.bar.setValue(0)
+        self.bar.setFixedHeight(20)
+        self.bar.setTextVisible(True)
+        self.bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #161a21;
+                border: 1px solid #374151;
+                border-radius: 5px;
+                text-align: center;
+                color: #ffffff;
+                font-size: 8.5pt;
+                font-weight: bold;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #16a34a, stop:1 #22c55e);
+                border-radius: 4px;
+            }
+        """)
+        layout.addWidget(self.bar)
+
+        # Details label
+        init_mb = (self.total_size / (1024 * 1024)) if self.total_size > 0 else 0.0
+        details_init = f"0% (0.0 MB / {init_mb:.1f} MB)" if init_mb > 0 else "0% (0.0 MB)"
+        self.lbl_details = QLabel(details_init)
+        self.lbl_details.setStyleSheet("color: #94a3b8; font-size: 8.5pt;")
+        layout.addWidget(self.lbl_details)
+
+        # Bottom Button Row
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setCursor(Qt.PointingHandCursor)
+        self.cancel_btn.setStyleSheet("""
+            QPushButton {
+                background: #334155;
+                color: #cbd5e1;
+                font-size: 9pt;
+                padding: 6px 16px;
+                border-radius: 5px;
+                border: none;
+            }
+            QPushButton:hover {
+                background: #475569;
+                color: #ffffff;
+            }
+            QPushButton:disabled {
+                background: #252b36;
+                color: #64748b;
+            }
+        """)
+        self.cancel_btn.clicked.connect(self.on_cancel)
+        btn_layout.addWidget(self.cancel_btn)
+        layout.addLayout(btn_layout)
+
+    def on_progress(self, downloaded: int, total: int):
+        if self.is_cancelled:
+            return
+
         if total > 0:
-            percent = min(100, max(0, int((downloaded / total) * 100)))
-            if progress_dialog.maximum() != 100:
-                progress_dialog.setRange(0, 100)
-            progress_dialog.setValue(percent)
-            dl_mb = downloaded / (1024 * 1024)
-            tot_mb = total / (1024 * 1024)
-            progress_dialog.setLabelText(f"Downloading update... {percent}% ({dl_mb:.1f} MB / {tot_mb:.1f} MB)")
-        else:
-            if progress_dialog.maximum() != 0:
-                progress_dialog.setRange(0, 0)
-            dl_mb = downloaded / (1024 * 1024)
-            progress_dialog.setLabelText(f"Downloading update... ({dl_mb:.1f} MB)")
+            self.total_size = total
+        elif self.total_size <= 0:
+            self.total_size = 136908774
 
-    def _apply_and_restart(path):
+        dl_mb = downloaded / (1024 * 1024)
+        tot_mb = self.total_size / (1024 * 1024)
+        pct = min(100, max(0, int(round((downloaded / self.total_size) * 100))))
+
+        self.bar.setValue(pct)
+        self.lbl_status.setText("Downloading update package...")
+        self.lbl_details.setText(f"{pct}% ({dl_mb:.1f} MB / {tot_mb:.1f} MB)")
+
+    def on_finished(self, path: str):
+        self.bar.setValue(100)
+        self.lbl_status.setText("Download complete! Restarting to apply update...")
+        self.lbl_details.setText("Please wait a moment...")
+        self.cancel_btn.setEnabled(False)
+        QApplication.processEvents()
+
+        # Smooth automatic restart with 600ms delay, exactly matching BillScrapper
+        QTimer.singleShot(600, lambda: self._apply_and_restart(path))
+
+    def on_error(self, err_msg: str):
+        self.close()
+        QMessageBox.critical(self.parent(), "Download Failed", f"An error occurred while downloading the update:\n{err_msg}")
+
+    def on_cancel(self):
+        self.is_cancelled = True
+        self.lbl_status.setText("Cancelling download...")
+        self.cancel_btn.setEnabled(False)
+        if self.downloader:
+            self.downloader.cancel()
+            self.downloader.terminate()
+        self.close()
+
+    def closeEvent(self, event):
+        if not self.is_cancelled:
+            self.on_cancel()
+        event.accept()
+
+    def _apply_and_restart(self, path: str):
         # Strip all PyInstaller, Python, and Tk environment variables to prevent child process conflicts
         clean_env = os.environ.copy()
         keys_to_remove = [
@@ -832,13 +933,13 @@ def start_download(parent_window, latest_tag=None, notes=None, download_url=None
         ]
         for k in keys_to_remove:
             clean_env.pop(k, None)
-            
+
         if hasattr(sys, '_MEIPASS'):
             meipass = sys._MEIPASS.lower()
             path_dirs = clean_env.get('PATH', '').split(os.pathsep)
             path_dirs = [p for p in path_dirs if p.lower().rstrip(r'\/') != meipass and '_mei' not in p.lower()]
             clean_env['PATH'] = os.pathsep.join(path_dirs)
-            
+
         # Launch Setup.exe matching BillScrapper:
         # /SILENT /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /AUTOUPDATE=1
         installer_args = [
@@ -866,36 +967,51 @@ def start_download(parent_window, latest_tag=None, notes=None, download_url=None
             )
 
         # Immediately close window and exit process cleanly without hanging on Qt event loop or threads
-        try:
-            parent_window.close()
-        except Exception:
-            pass
+        parent = self.parent()
+        if parent:
+            try:
+                parent.close()
+            except Exception:
+                pass
         os._exit(0)
 
-    def on_finished(path):
-        progress_dialog.setRange(0, 100)
-        progress_dialog.setValue(100)
-        progress_dialog.setLabelText("Download complete! Restarting to apply update...")
-        progress_dialog.setCancelButton(None)
-        QApplication.processEvents()
-        
-        # Smooth automatic restart with 600ms delay, exactly matching BillScrapper
-        QTimer.singleShot(600, lambda: _apply_and_restart(path))
 
-    def on_error(err):
-        progress_dialog.close()
-        QMessageBox.critical(parent_window, "Download Failed", f"An error occurred while downloading the update:\n{err}")
+def start_download(parent_window, latest_tag=None, notes=None, download_url=None, file_size=0):
+    """Downloads update setup installer and executes detached silent install matching BillScrapper."""
+    # Unique timestamped installer path to prevent file locking and cache collisions (matching BillScrapper)
+    fname = f"update_{int(time.time())}_PITCSuite_Setup.exe"
+    dest_path = os.path.join(tempfile.gettempdir(), fname)
 
-    def on_cancel():
-        downloader.cancel()
-        downloader.terminate()
-        progress_dialog.close()
+    # Resolve target_source: prefer direct/API download_url over obsolete Google Drive fallback
+    target_source = download_url
+    resolved_size = file_size
+    if not target_source or target_source == GDRIVE_SETUP_FILE_ID:
+        try:
+            from pitcsuite.license_manager import get_api_base_url
+            api_url = get_api_base_url()
+            resp = requests.get(f"{api_url}/api/updates/latest", timeout=6)
+            if resp.status_code == 200:
+                data = resp.json()
+                remote_url = data.get("download_url")
+                if remote_url and remote_url.startswith("http"):
+                    target_source = remote_url
+                if not resolved_size:
+                    resolved_size = int(data.get("file_size", 0) or 0)
+        except Exception:
+            pass
 
-    downloader.progress.connect(on_progress)
-    downloader.finished.connect(on_finished)
-    downloader.error.connect(on_error)
-    
-    progress_dialog.canceled.connect(on_cancel)
-    
+    if not target_source:
+        target_source = GDRIVE_SETUP_FILE_ID
+
+    dialog = UpdateDownloadDialog(version_tag=latest_tag or "", file_size=resolved_size, parent=parent_window)
+    downloader = DownloadThread(target_source, dest_path, expected_size=resolved_size)
+    dialog.downloader = downloader
+    parent_window._downloader = downloader  # Prevent GC crash
+    parent_window._download_dialog = dialog
+
+    downloader.progress.connect(dialog.on_progress)
+    downloader.finished.connect(dialog.on_finished)
+    downloader.error.connect(dialog.on_error)
+
     downloader.start()
-    progress_dialog.show()
+    dialog.show()
