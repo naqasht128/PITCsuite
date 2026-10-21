@@ -1,3 +1,3 @@
-• **E/Bills Downloader URL Persistence:** Bills URL edits now persist across app relaunches with default set to https://bill.pitc.com.pk/pescobill.
-• **PITC Report Downloader DISCO Selection:** Added DISCO dropdown selector with PESCO as default; persists user selection across relaunches and automates DISCO selection & credentials login on cp.pitc.com.pk.
-• **Bill Scrapper Custom Bills URL:** Added editable Bills URL option with system persistence for subsequent relaunches (defaults to https://bill.pitc.com.pk/pescobill).
+• **E/Bills Downloader Crash Fix:** Resolved crash when processing bills caused by PyMuPDF 2.0 ONNX layout model lookup (missing layout_rf2.4.1+imf1.yaml resource).
+• **Dependency & Build Stabilization:** Pinned PyMuPDF to <2.0.0 and actively excluded unused ONNX layout models from PyInstaller builds to keep binary lightweight and fast.
+• **Resilient PDF Formatting:** Isolated A4 scaling and Sr. No. stamping to prevent individual PDF formatting issues from halting multi-account batch downloads.

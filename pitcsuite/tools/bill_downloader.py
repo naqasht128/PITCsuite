@@ -201,6 +201,8 @@ class BillSoftPanel(QWidget):
         document.body.appendChild(d);""")
 
     def _fit_pdf_to_a4(self, pdf_path, sr=None):
+        import sys
+        sys.modules.setdefault("pymupdf.layout", None)
         import fitz
 
         src = fitz.open(pdf_path)
@@ -413,7 +415,10 @@ class BillSoftPanel(QWidget):
             pdf_name = str(sr).strip() if sr else ac
             p = self._unique_pdf(out, pdf_name)
             with open(p, "wb") as f: f.write(base64.b64decode(pdf["data"]))
-            self._fit_pdf_to_a4(p, sr if add_sr and sr else None)
+            try:
+                self._fit_pdf_to_a4(p, sr if add_sr and sr else None)
+            except Exception as e:
+                self.signals.log.emit(f"⚠️ A4 format warning ({ac}): {e}")
             collected.append((int(sr) if sr and str(sr).isdigit() else 999999, p))
             sh.cell(r, 3).value = "Saved"; self.signals.log.emit("→ PDF created"); wb.save(excel)
             done += 1; self.signals.progress.emit(done, total)

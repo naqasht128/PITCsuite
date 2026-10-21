@@ -106,6 +106,8 @@ class PITCWorker(QThread):
             from webdriver_manager.chrome import ChromeDriverManager
             from openpyxl import load_workbook
             from pypdf import PdfReader, PdfWriter
+            import sys as _sys
+            _sys.modules.setdefault("pymupdf.layout", None)
             import pyautogui, fitz, shutil, traceback
             import datetime as _dt
             import pyotp

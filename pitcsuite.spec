@@ -21,7 +21,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['pymupdf.layout', 'pymupdf_layout'],
     noarchive=False,
     optimize=0,
 )

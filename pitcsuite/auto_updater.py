@@ -28,6 +28,11 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.99": [
+        "<b>E/Bills Downloader Crash Fix:</b> Resolved crash when processing bills caused by PyMuPDF 2.0 ONNX layout model lookup (missing layout_rf2.4.1+imf1.yaml resource).",
+        "<b>Dependency & Build Stabilization:</b> Pinned PyMuPDF to <2.0.0 and actively excluded unused ONNX layout models from PyInstaller builds to keep binary lightweight and fast.",
+        "<b>Resilient PDF Formatting:</b> Isolated A4 scaling and Sr. No. stamping to prevent individual PDF formatting issues from halting multi-account batch downloads."
+    ],
     "v2.8.98": [
         "<b>E/Bills Downloader URL Persistence:</b> Bills URL edits now persist across app relaunches with default set to https://bill.pitc.com.pk/pescobill.",
         "<b>PITC Report Downloader DISCO Selection:</b> Added DISCO dropdown selector with PESCO as default; persists user selection across relaunches and automates DISCO selection & credentials login on cp.pitc.com.pk.",
