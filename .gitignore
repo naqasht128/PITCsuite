@@ -194,6 +194,8 @@ outputs/
 generate_key.exe
 generate_key.spec
 generate_key.py
+keys.py
+/keys.py
 
 # Licensing & Admin Secrets
 *.key
