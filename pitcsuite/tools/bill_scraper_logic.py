@@ -378,10 +378,14 @@ GENERAL_LABELS = {
     "bill month": "bill_month",
     "due date": "due_date",
     "transformer": "transformer",
+    "tariff category": "tariff_cat",
+    "curr mdi": "curr_mdi",
+    "sub division": "sub_division",
 }
 
-LOOKAHEAD_LABELS = {
-    "consumer id", "ref no", "reference no", "name address", "name and address", "san load",
+BILL_HEADING_KEYWORDS = {
+    "reference no", "consumer id", "name address", "name and address", "transformer",
+    "feeder", "sub division", "category", "status", "tariff category", "san load",
     "san load kw", "curr mdi", "tariff", "meter no", "meter number", "meter", "mf",
     "previous reading", "present reading", "units", "unit", "bill month", "due date",
     "total electricity charges", "subsidies", "net electricity charges", "taxes",
@@ -711,6 +715,10 @@ class PITCBillScraper:
         value = clean(value)
         if not value or is_dropped(name):
             return
+        # Never accept a heading text as a data value
+        norm_val = re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+        if norm_val in BILL_HEADING_KEYWORDS or clean(value).upper() == clean(name).upper():
+            return
         key = canonical_label(name)
 
         if key == "adjustments":
@@ -725,6 +733,8 @@ class PITCBillScraper:
         if "units" in key:
             value = re.sub(r"\(\s*[OP]\s*\)\s*", "", value, flags=re.I).strip()
 
+        # If a units field receives multiple space-separated numbers (e.g. '1673 610'),
+        # automatically distribute them into index and index+1 so they are never merged into one cell.
         units_match = re.match(r"^(kwh|kvarh|mdi)_units_?(\d+)?$", key)
         if units_match:
             prefix = units_match.group(1)
@@ -745,46 +755,20 @@ class PITCBillScraper:
 
     @staticmethod
     def put_grid_col_cells(output, soup):
-        """Extract structured cells from modern responsive grids (.grid-col-cell, .val-space, etc.)."""
-        for cell in soup.select(".grid-col-cell, .val-space, .charges-bd-row"):
-            txt = clean(cell.get_text(" "))
-            if not txt:
-                continue
-
-            cls_list = cell.get("class", [])
-            cls_str = " ".join(cls_list) if isinstance(cls_list, list) else str(cls_list)
-
-            if "val-space--tariff" in cls_str:
-                val = re.sub(r"(?i)^tariff\s*:?\s*", "", txt).strip()
-                if val and val.upper() != "TARIFF CATEGORY":
-                    output["tariff"] = val
-                continue
-            if "val-space--load" in cls_str:
-                val = re.sub(r"(?i)^san\s*load\s*:?\s*", "", txt).strip()
-                if val:
-                    output["san_load"] = val
-                continue
-            if "val-space--ref-no" in cls_str:
-                continue
-
-            lbl_el = cell.select_one(".grid-col-cell__lbl, .charges-bd-lbl, label, strong, b")
-            val_el = cell.select_one(".grid-col-cell__val, .charges-bd-val, .val-space")
-
-            if lbl_el and val_el:
-                l_text = clean(lbl_el.get_text(" ")).lower().rstrip(":")
-                v_text = clean(val_el.get_text(" "))
-                if l_text in GENERAL_LABELS:
-                    if l_text == "status" and v_text.upper() == "TARIFF CATEGORY":
-                        v_text = ""
-                    PITCBillScraper.put(output, l_text, v_text)
-            elif lbl_el and not val_el:
-                l_text = clean(lbl_el.get_text(" ")).lower().rstrip(":")
-                full_txt = clean(cell.get_text(" "))
-                rem = clean(full_txt[len(l_text):]).lstrip(":").strip()
-                if l_text in GENERAL_LABELS and rem:
-                    if l_text == "status" and rem.upper() == "TARIFF CATEGORY":
-                        rem = ""
-                    PITCBillScraper.put(output, l_text, rem)
+        """Read 1-to-1 label-row and val-space pairs inside .grid-col-cell."""
+        for cell in soup.select(".grid-col-cell"):
+            label_rows = cell.select(".label-row")
+            val_spaces = cell.select(".val-space")
+            for lr, vs in zip(label_rows, val_spaces):
+                en_lbl = lr.select_one(".en-lbl")
+                lbl_text = clean(en_lbl.get_text(" ")) if en_lbl else clean(lr.get_text(" "))
+                val_text = clean(" | ".join(text_lines(vs)))
+                canon = canonical_label(lbl_text)
+                if val_text:
+                    PITCBillScraper.put(output, lbl_text, val_text)
+                else:
+                    if canon not in output:
+                        output[canon] = ""
 
     @staticmethod
     def put_general_pairs(output, soup):
@@ -795,17 +779,20 @@ class PITCBillScraper:
             if len(cells) >= 2:
                 label = cells[0].lower().rstrip(":")
                 if label in known:
-                    v = cells[-1]
-                    if label == "status" and v.upper() == "TARIFF CATEGORY":
-                        v = ""
-                    PITCBillScraper.put(output, cells[0], v)
-        for node in soup.select(".grid-col-cell, .charges-bd-row, .right-section-cell, .ibn-bill-messages__cell"):
-            bits = [clean(x) for x in node.stripped_strings if clean(x)]
-            if len(bits) >= 2 and bits[0].lower().rstrip(":") in known:
-                v = bits[-1]
-                if bits[0].lower().rstrip(":") == "status" and v.upper() == "TARIFF CATEGORY":
-                    v = ""
-                PITCBillScraper.put(output, bits[0], v)
+                    PITCBillScraper.put(output, cells[0], cells[-1])
+        for node in soup.select(".charges-bd-row, .right-section-cell"):
+            lbl_el = node.select_one(".right-panel-en, .charges-bd-en, .charges-bd-label")
+            val_el = node.select_one(".right-main-val, .charges-bd-val")
+            if lbl_el and val_el:
+                lbl = clean(lbl_el.get_text(" ")).lower().rstrip(":")
+                lbl = re.sub(r"^[^a-z0-9]+", "", lbl).strip()
+                val = clean(val_el.get_text(" "))
+                if lbl in known:
+                    PITCBillScraper.put(output, lbl, val)
+            else:
+                bits = [clean(x) for x in node.stripped_strings if clean(x)]
+                if len(bits) >= 2 and bits[0].lower().rstrip(":") in known:
+                    PITCBillScraper.put(output, bits[0], bits[-1])
 
     @staticmethod
     def put_general_text_pairs(output, soup):
@@ -822,171 +809,178 @@ class PITCBillScraper:
             key = GENERAL_LABELS[label]
             if is_dropped(key):
                 continue
-            if key in output and output[key]:
-                continue
+            if key in output:
+                existing = str(output[key])
+                if key == "san_load" and re.search(r"[A-Za-z]-?\d", existing):
+                    del output[key]
+                elif key == "tariff" and not re.search(r"[A-Za-z]-?\d", existing):
+                    del output[key]
+                else:
+                    continue
             for candidate in lines[index + 1:index + 4]:
-                cand_clean = candidate.strip()
-                if not cand_clean or cand_clean.lower() in labels or cand_clean.lower() in LOOKAHEAD_LABELS:
+                candidate_key = re.sub(r"[^a-z0-9]+", " ", candidate.lower()).strip()
+                if candidate_key in BILL_HEADING_KEYWORDS or candidate_key in labels or not candidate:
+                    break
+                if any(ord(ch) > 127 for ch in candidate) and not re.search(r"\d", candidate):
                     continue
-                if key == "status" and cand_clean.upper() == "TARIFF CATEGORY":
+                if key == "san_load" and not re.search(r"\d", candidate):
                     continue
-                PITCBillScraper.put(output, key, cand_clean)
+                if key == "tariff" and not re.search(r"[A-Za-z]-?\d", candidate):
+                    continue
+                PITCBillScraper.put(output, key, candidate)
                 break
 
     @staticmethod
-    def put_meter_tables(output, soup):
-        """Extract multi-rate meter readings across Peak, Off-Peak, and Normal rows."""
-        for table_no, table in enumerate(soup.select("table"), 1):
-            rows = table.select("tr")
-            if not rows:
-                continue
-            header_cells = [clean(x.get_text(" ")).lower() for x in rows[0].select("th, td")]
-            if not any("meter" in x or "reading" in x for x in header_cells):
-                continue
+    def extract_history(soup, mode):
+        """Extract billing and payment history from history grid boxes.
 
-            for row in rows[1:]:
-                cells = [text_lines(td) for td in row.select("td, th")]
-                if len(cells) < 4:
-                    continue
-
-                meter_col = cells[0]
-                prev_col = cells[1] if len(cells) > 1 else []
-                pres_col = cells[2] if len(cells) > 2 else []
-                mf_col = cells[3] if len(cells) > 3 else []
-                units_col = cells[4] if len(cells) > 4 else []
-
-                row_text = " ".join(" ".join(c) for c in cells).lower()
-                prefix = "kvarh" if "kvarh" in row_text else ("mdi" if "mdi" in row_text else "kwh")
-
-                for val_idx in range(max(len(prev_col), len(pres_col), len(units_col), 1)):
-                    meter = meter_col[val_idx] if val_idx < len(meter_col) else (meter_col[0] if meter_col else "")
-                    prev = prev_col[val_idx] if val_idx < len(prev_col) else ""
-                    pres = pres_col[val_idx] if val_idx < len(pres_col) else ""
-                    mf = mf_col[val_idx] if val_idx < len(mf_col) else (mf_col[0] if mf_col else "")
-                    units = units_col[val_idx] if val_idx < len(units_col) else ""
-
-                    if prefix == "kwh" and meter:
-                        m_type, m_no = extract_meter_type_and_no(meter)
-                        if m_type and "Meter Type" not in output:
-                            output["Meter Type"] = m_type
-                        meter = m_no
-
-                    PITCBillScraper.put(output, f"{prefix}_meter_{val_idx + 1}", meter)
-                    PITCBillScraper.put(output, f"{prefix}_previous_{val_idx + 1}", prev)
-                    PITCBillScraper.put(output, f"{prefix}_present_{val_idx + 1}", pres)
-                    PITCBillScraper.put(output, f"{prefix}_mf_{val_idx + 1}", mf)
-                    PITCBillScraper.put(output, f"{prefix}_units_{val_idx + 1}", units)
-
-    @staticmethod
-    def put_meter_text_sections(output, soup):
-        """Fallback for non-standard or text-based meter presentations."""
-        main = soup.select_one(".gbn-app-shell") or soup.body or soup
-        if not main:
-            return
-        lines = [clean(x) for x in main.stripped_strings if clean(x)]
-        keys = [re.sub(r"[^a-z0-9]+", " ", x.lower()).strip() for x in lines]
-
-        for kind in ("previous reading", "present reading", "units"):
-            start = next((i for i, value in enumerate(keys) if value == kind), None)
-            if start is None:
-                continue
-            values = []
-            for candidate in lines[start + 1:start + 7]:
-                if re.fullmatch(r"[-+]?(?:\d+(?:\.\d+)?|\.\d+)", candidate):
-                    values.append(candidate)
-                elif values:
-                    break
-            target_kind = "read" if kind == "present reading" else ("units" if kind == "units" else "previous")
-            for value_no, value in enumerate(values[:4], 1):
-                PITCBillScraper.put(output, f"kwh_{target_kind}_{value_no}", value)
-
-    @staticmethod
-    def extract_history(soup, mode="1yr"):
-        """Extract billing and payment history tables:
-        mode='1yr': extract 11 historical months (skipping 1st month so 12 months total with current).
-        mode='6mo': extract 5 historical months from the 6-month history box.
+        mode == '1yr': Box 0 (skip 1st month) + Box 1 (all months) -> 11 historical months
+        mode == '6mo': Box 1 (.history-center-divider, skip 1st month) -> 5 historical months
         """
+        wrapper = soup.select_one(".history-data-wrapper")
+        grids = wrapper.select(".history-block-grid") if wrapper else soup.select(".history-block-grid")
+        if not grids:
+            return {}
+
+        target_rows = []
+        if mode == "1yr":
+            box0_rows = grids[0].select(".history-row")
+            if len(box0_rows) > 1:
+                target_rows.extend(box0_rows[1:])
+            elif box0_rows:
+                target_rows.extend(box0_rows)
+
+            if len(grids) > 1:
+                target_rows.extend(grids[1].select(".history-row"))
+        elif mode == "6mo":
+            box1 = None
+            for g in grids:
+                classes = g.get("class", [])
+                if "history-center-divider" in classes:
+                    box1 = g
+                    break
+            if not box1 and len(grids) > 1:
+                box1 = grids[1]
+            elif not box1 and grids:
+                box1 = grids[0]
+
+            if box1:
+                box1_rows = box1.select(".history-row")
+                if len(box1_rows) > 1:
+                    target_rows.extend(box1_rows[1:])
+                elif box1_rows:
+                    target_rows.extend(box1_rows)
+
         out = {}
-        max_months = 11 if mode == "1yr" else 5
-
-        history_blocks = soup.select(".history-block-grid, .history-center-divider, table.history, .billing-history")
-        hist_rows = []
-
-        if history_blocks:
-            for block in history_blocks:
-                for row in block.select("tr"):
-                    tds = [clean(td.get_text(" ")) for td in row.select("td, th") if clean(td.get_text(" "))]
-                    if len(tds) >= 3 and not any("month" in x.lower() or "bill" in x.lower() for x in tds[:2]):
-                        hist_rows.append(tds)
-                if not hist_rows:
-                    for grid_row in block.select(".grid-row, .history-row"):
-                        cells = [clean(c.get_text(" ")) for c in grid_row.select(".grid-cell, .cell, div") if clean(c.get_text(" "))]
-                        if len(cells) >= 3:
-                            hist_rows.append(cells)
-
-        if not hist_rows:
-            all_tables = soup.select("table")
-            for tbl in all_tables:
-                h_text = clean(tbl.get_text(" ")).lower()
-                if "history" in h_text or ("month" in h_text and "units" in h_text and "bill" in h_text):
-                    for row in tbl.select("tr"):
-                        tds = [clean(td.get_text(" ")) for td in row.select("td") if clean(td.get_text(" "))]
-                        if len(tds) >= 3:
-                            hist_rows.append(tds)
-
-        if len(hist_rows) > 1:
-            target_rows = hist_rows[1:max_months + 1]
-        else:
-            target_rows = []
-
-        for idx, cells in enumerate(target_rows, 1):
-            month_val = ""
-            status_val = ""
-            units_val = ""
-            bill_val = ""
-            pay_val = ""
-
-            cleaned_cells = []
-            for c in cells:
-                c_clean = c.strip()
-                if c_clean.upper() in {"MONTH", "STATUS", "UNITS", "BILL", "BILL (RS.)", "PAYMENT", "PAYMENT (RS.)", "TARIFF CATEGORY"}:
-                    cleaned_cells.append("")
-                else:
-                    cleaned_cells.append(c_clean)
-
-            if len(cleaned_cells) >= 5:
-                month_val = cleaned_cells[0]
-                status_val = cleaned_cells[1]
-                units_val = cleaned_cells[2]
-                bill_val = cleaned_cells[3]
-                pay_val = cleaned_cells[4]
-            elif len(cleaned_cells) == 4:
-                month_val = cleaned_cells[0]
-                status_val = cleaned_cells[1]
-                units_val = cleaned_cells[2]
-                bill_val = cleaned_cells[3]
-            elif len(cleaned_cells) == 3:
-                month_val = cleaned_cells[0]
-                units_val = cleaned_cells[1]
-                bill_val = cleaned_cells[2]
-
-            out[f"Month_{idx}"] = month_val
-            out[f"Status_{idx}"] = status_val
-            out[f"Units_{idx}"] = units_val
-            out[f"Bill (Rs.)_{idx}"] = bill_val
-            out[f"Payment (Rs.)_{idx}"] = pay_val
-
+        for idx, row in enumerate(target_rows, 1):
+            cells = [clean(c.get_text(" ", strip=True)) for c in row.select(".history-cell")]
+            out[f"Month_{idx}"] = cells[0] if len(cells) > 0 else ""
+            out[f"Status_{idx}"] = cells[1] if len(cells) > 1 else ""
+            out[f"Units_{idx}"] = cells[2] if len(cells) > 2 else ""
+            out[f"Bill (Rs.)_{idx}"] = cells[3] if len(cells) > 3 else ""
+            out[f"Payment (Rs.)_{idx}"] = cells[4] if len(cells) > 4 else ""
         return out
 
     @staticmethod
+    def put_meter_tables(output, soup):
+        """Map both MDI and ordinary meter tables to stable reading headings."""
+        header_aliases = {
+            "meter": "meter", "meter no": "meter", "meter no.": "meter", "meter number": "meter",
+            "present": "present", "present reading": "present", "present readings": "present",
+            "mf": "mf", "units": "units", "unit": "units", "type": None,
+            "previous": None, "previous reading": None, "previous readings": None,
+        }
+        for table in soup.select("table"):
+            headers = [clean(x.get_text(" ")).lower() for x in table.select("thead th")]
+            if not headers:
+                headers = [clean(x.get_text(" ")).lower() for x in table.select("tr:first-child th, tr:first-child td")]
+            mapped = [header_aliases.get(re.sub(r"\s+", " ", h).strip()) for h in headers]
+            if not any(x in {"meter", "present", "mf", "units"} for x in mapped):
+                continue
+            rows = table.select("tbody tr") or table.select("tr")[1:]
+            carry = None
+            for row in rows:
+                cells = row.select("th, td")
+                if not cells:
+                    continue
+                if headers and len(cells) == len(headers) - 1 and carry is not None:
+                    cells = [carry] + cells
+                if cells and headers and headers[0] in {"meter", "meter no", "meter no."}:
+                    carry = cells[0]
+                row_text = " ".join(clean(x.get_text(" ")) for x in cells[:2]).lower()
+                prefix = "kvarh" if "kvarh" in row_text or "kvar h" in row_text else "mdi" if re.search(r"\bmdi\b", row_text) else "kwh"
+                for col_no, cell in enumerate(cells):
+                    kind = mapped[col_no] if col_no < len(mapped) else None
+                    if kind is None:
+                        continue
+                    for value_no, value in enumerate(text_lines(cell), 1):
+                        self_value = re.sub(r"\b[IE]\s+(?=\d)", "", value, flags=re.I).strip()
+                        PITCBillScraper.put(output, f"{prefix}_{kind}_{value_no}", self_value)
+
+    @staticmethod
+    def put_meter_text_sections(output, soup):
+        """Fallback for general bills that render meter data as div/text blocks."""
+        main = soup.select_one(".gbn-app-shell") or soup.body or soup
+        lines = [clean(x) for x in main.stripped_strings if clean(x)]
+        lowered = [re.sub(r"[^a-z0-9]+", " ", x.lower()).strip() for x in lines]
+        try:
+            start = next(i for i, value in enumerate(lowered) if value in {"meter info", "meter information"})
+        except StopIteration:
+            return
+        end = next((i for i in range(start + 1, len(lines)) if lowered[i] in {"bill charges breakdown", "bill history"}), len(lines))
+        section_lines = lines[start:end]
+        section_keys = [re.sub(r"[^a-z0-9]+", " ", x.lower()).strip() for x in section_lines]
+        if not any(value in {"meter no", "meter number"} for value in section_keys):
+            return
+        labels = {
+            "meter no": "meter", "meter number": "meter", "meter": "meter",
+            "present reading": "present", "present readings": "present",
+            "present": "present", "mf": "mf", "units": "units", "unit": "units",
+        }
+        for index, label in enumerate(section_keys):
+            kind = labels.get(label)
+            if not kind:
+                continue
+            values = []
+            for candidate in section_lines[index + 1:]:
+                candidate_key = re.sub(r"[^a-z0-9]+", " ", candidate.lower()).strip()
+                if candidate_key in labels or candidate_key in {"previous", "previous reading", "type", "meter info"}:
+                    break
+                if any(ord(ch) > 127 for ch in candidate) and not re.search(r"\d", candidate):
+                    continue
+                if kind == "meter" and not re.search(r"\d", candidate):
+                    continue
+                if kind != "meter" and not re.search(r"[-+]?\d", candidate):
+                    continue
+                values.append(re.sub(r"\b[IE]\s+(?=\d)", "", candidate, flags=re.I).strip())
+            for value_no, value in enumerate(values, 1):
+                PITCBillScraper.put(output, f"kwh_{kind}_{value_no}", value)
+
+    @staticmethod
     def put_cum_mdi(output, soup):
-        """Extract PRV CUMM MDI and PRS CUMM MDI."""
+        """Read previous and present cumulative MDI values."""
+        # 1. Check explicit MDI meter footer cells if present
+        for cell in soup.select(".mdi-meter-footer-cell"):
+            lbl_el = cell.select_one(".en-lbl")
+            val_el = cell.select_one(".mdi-meter-footer-val")
+            if lbl_el and val_el:
+                lbl = clean(lbl_el.get_text(" ")).upper()
+                vals = [clean(x) for x in text_lines(val_el) if re.fullmatch(r"[-+]?(?:\d+(?:\.\d+)?|\.\d+)", clean(x))]
+                if "PRV" in lbl and "CUM" in lbl:
+                    for idx, val in enumerate(vals[:4], 1):
+                        output[f"prv_cum_mdi_{idx}"] = val
+                elif "PRS" in lbl and "CUM" in lbl:
+                    for idx, val in enumerate(vals[:4], 1):
+                        output[f"cum_mdi_{idx}"] = val
+
+        # 2. Supplementary scan through stripped lines fallback
         main = soup.select_one(".gbn-app-shell") or soup.body or soup
         if not main:
             return
         lines = [clean(x) for x in main.stripped_strings if clean(x)]
         keys = [re.sub(r"[^a-z0-9]+", " ", x.lower()).strip() for x in lines]
 
+        # PRV CUMM MDI
         prv_start = next((i for i, value in enumerate(keys) if value in {"prv cumm mdi", "previous cumm mdi", "previous cumulative mdi", "prv cum mdi"}), None)
         if prv_start is not None:
             values = []
@@ -1000,6 +994,7 @@ class PITCBillScraper:
                 if k not in output:
                     output[k] = value
 
+        # PRS CUMM MDI
         prs_start = next((i for i, value in enumerate(keys) if value in {"prs cumm mdi", "present cumm mdi", "present cumulative mdi", "prs cum mdi"}), None)
         if prs_start is not None:
             values = []
@@ -1016,9 +1011,11 @@ class PITCBillScraper:
     @staticmethod
     def put_charges_breakdown(output, soup):
         """Extract Current Bill and Total FPA from charges breakdown."""
+        # 1. Look for .charges-bd-row containers
         for row in soup.select(".charges-bd-row, tr"):
             row_text = clean(row.get_text(" ")).upper()
 
+            # Current Bill (class=charges-bd-val)
             if "CURRENT BILL" in row_text:
                 val_el = row.select_one(".charges-bd-val")
                 if val_el:
@@ -1030,6 +1027,7 @@ class PITCBillScraper:
                     if len(bits) >= 2 and re.search(r"\d", bits[-1]):
                         output["Current Bill"] = bits[-1]
 
+            # Total FPA (class=charges-bd-val charges-bd-val--strong)
             if any(term in row_text for term in ("TOTAL F.P.A", "TOTAL FPA", "TOTAL F P A", "TOTAL FUEL PRICE")):
                 val_el = (
                     row.select_one(".charges-bd-val.charges-bd-val--strong")
@@ -1045,6 +1043,7 @@ class PITCBillScraper:
                     if len(bits) >= 2 and re.search(r"\d", bits[-1]):
                         output["Total FPA"] = bits[-1]
 
+        # 2. Target direct CSS classes if not yet populated
         if "Total FPA" not in output:
             for el in soup.select(".charges-bd-val--strong, .charges-bd-val.charges-bd-val--strong"):
                 parent = el.find_parent(class_="charges-bd-row") or el.parent
@@ -1055,6 +1054,7 @@ class PITCBillScraper:
                         output["Total FPA"] = v
                         break
 
+        # 3. Fallback scan through stripped lines
         main = soup.select_one(".gbn-app-shell") or soup.body or soup
         if main and ("Current Bill" not in output or "Total FPA" not in output):
             lines = [clean(x) for x in main.stripped_strings if clean(x)]
@@ -1095,7 +1095,13 @@ class PITCBillScraper:
                     time.sleep(0.1)
             except requests.exceptions.HTTPError as exc:
                 if exc.response is not None and 500 <= exc.response.status_code <= 504:
-                    time.sleep(1.0)
+                    was_disconnected = True
+                    if log_callback:
+                        log_callback(f"PITC server busy (HTTP {exc.response.status_code}). Retrying in a moment...")
+                    for _ in range(20):
+                        if stop_event and stop_event.is_set():
+                            raise InterruptedError("Operation stopped by user")
+                        time.sleep(0.1)
                     continue
                 raise
 
@@ -1104,7 +1110,12 @@ class PITCBillScraper:
         session.headers.update({"User-Agent": "Mozilla/5.0 (compatible; PITC-Bill-Exporter/1.0)"})
         target_url = getattr(self, "url", URL)
         page = self._fetch_url_with_retry(session, "get", target_url, stop_event=stop_event, log_callback=log_callback)
-        soup = BeautifulSoup(page.text, "html.parser")
+        try:
+            import lxml
+            parser = "lxml"
+        except ImportError:
+            parser = "html.parser"
+        soup = BeautifulSoup(page.text, parser)
         form = soup.select_one("form#SubmitForm") or soup.find("form")
         if not form:
             raise RuntimeError("PITC search form was not found")
@@ -1112,8 +1123,8 @@ class PITCBillScraper:
         payload.update({"rbSearchByList": "refno", "searchTextBox": account, "ruCodeTextBox": "", "btnSearch": "Search"})
         result = self._fetch_url_with_retry(session, "post", target_url, data=payload, stop_event=stop_event, log_callback=log_callback)
         if "CONSUMER DETAIL" not in result.text.upper() and "CONSUMER DETAILS" not in result.text.upper():
-            raise RuntimeError(clean(BeautifulSoup(result.text, "html.parser").get_text(" "))[:300] or "No bill returned")
-        return BeautifulSoup(result.text, "html.parser")
+            raise RuntimeError(clean(BeautifulSoup(result.text, parser).get_text(" "))[:300] or "No bill returned")
+        return BeautifulSoup(result.text, parser)
 
     def scrape_account(self, raw_account, existing_status=None, stop_event=None, log_callback=None, history_mode=None):
         if history_mode is None:
@@ -1148,14 +1159,21 @@ class PITCBillScraper:
                 "scrape_status": "Fetched",
             }
 
+            # 1. Structured grid cells (Status, Tariff, San Load, Name, Feeder, etc.)
             self.put_grid_col_cells(out, soup)
+
+            # 2. Key-value pairs
             self.put_general_pairs(out, soup)
+
+            # 3. Fallback text pairs
             self.put_general_text_pairs(out, soup)
+
             self.put_meter_tables(out, soup)
             self.put_meter_text_sections(out, soup)
             self.put_cum_mdi(out, soup)
             self.put_charges_breakdown(out, soup)
 
+            # Final validation: ensure units fields don't have multiple numbers in a single key
             for prefix in ("kwh", "kvarh", "mdi"):
                 for idx in range(1, 5):
                     k = f"{prefix}_units_{idx}"
@@ -1168,6 +1186,7 @@ class PITCBillScraper:
                             if next_k not in out or not out[next_k]:
                                 out[next_k] = nums[1]
 
+            # Extract Meter Type from kwh_meter_1 if present
             m_type, m_no = extract_meter_type_and_no(out.get("kwh_meter_1"))
             if m_type:
                 out["Meter Type"] = m_type
@@ -1175,13 +1194,18 @@ class PITCBillScraper:
             elif "Meter Type" not in out or out["Meter Type"] is None:
                 out["Meter Type"] = ""
 
+            # Billing/Payment History extraction if requested
             if history_mode in ("1yr", "6mo"):
                 hist_data = self.extract_history(soup, history_mode)
                 out.update(hist_data)
 
+            # Sanitize stray 'TARIFF CATEGORY' from status
             if str(out.get("status", "")).strip().upper() == "TARIFF CATEGORY":
                 out["status"] = ""
 
+            # Protected/Non-Protected calculation:
+            # If consumer's tariff is A-1A(01) and he has not consumed above 200 units in last 6 months
+            # (current month + 5 months from history) then put "Protected", otherwise "Non-Protected".
             h_6mo_data = self.extract_history(soup, "6mo")
             curr_u = parse_num(out.get("kwh_units_1"))
             if curr_u is None:
@@ -1191,7 +1215,10 @@ class PITCBillScraper:
             h_units = [parse_num(h_6mo_data.get(f"Units_{i}")) for i in range(1, 6)]
             out["Protected/Non-Protected"] = compute_protected_status(out.get("tariff"), curr_u, h_units)
 
+            # Total Payment calculation: sum of all payments already fetched in excel
             out["Total Payment"] = compute_total_payment(out)
+
+            # Total Units calculation: sum of all units consumed fetched in excel
             out["Total Units"] = compute_total_units(out)
 
             def format_num(num, decimals=4):
@@ -1200,6 +1227,10 @@ class PITCBillScraper:
                 val = round(num, decimals)
                 return int(val) if val.is_integer() else val
 
+            # Check status:
+            # 1. If P.Disc or T.Disc: skip subtraction, Actual MDI, and actual fixed charges.
+            # 2. If Replaced: subtract (cum_mdi_2 - prv_cum_mdi_2) and (cum_mdi_4 - prv_cum_mdi_4).
+            # 3. Normal / Other: subtract (cum_mdi_1 - prv_cum_mdi_1) and (cum_mdi_2 - prv_cum_mdi_2).
             status_val = out.get("status") or existing_status
 
             if is_disc_status(status_val):
@@ -1209,6 +1240,7 @@ class PITCBillScraper:
                 out["Actual_Fix_Charges"] = None
             else:
                 if is_replaced_status(status_val):
+                    # Case Replaced: cumm mdi 2 - prv cumm mdi 2, and cumm mdi 4 - prv cumm mdi 4
                     prv2 = parse_num(out.get("prv_cum_mdi_2"))
                     cum2 = parse_num(out.get("cum_mdi_2"))
                     diff1 = format_num(abs(cum2 - prv2), 4) if (prv2 is not None and cum2 is not None) else None
@@ -1221,6 +1253,7 @@ class PITCBillScraper:
                     if diff2 is not None:
                         out["diff_cum_mdi2"] = diff2
                 else:
+                    # Normal status: cumm mdi 1 - prv cumm mdi 1, and cumm mdi 2 - prv cumm mdi 2
                     prv1 = parse_num(out.get("prv_cum_mdi_1"))
                     cum1 = parse_num(out.get("cum_mdi_1"))
                     diff1 = format_num(abs(cum1 - prv1), 4) if (prv1 is not None and cum1 is not None) else None
@@ -1233,6 +1266,7 @@ class PITCBillScraper:
                     if diff2 is not None:
                         out["diff_cum_mdi2"] = diff2
 
+                # Actual MDI: max(Diff_cum_mdi1, diff_cum_mdi2) * mdi_mf_1
                 diff_candidates = []
                 for d in (out.get("Diff_cum_mdi1"), out.get("diff_cum_mdi2")):
                     if d is not None:
@@ -1246,9 +1280,11 @@ class PITCBillScraper:
                     actual_mdi = format_num(max_diff * mf, 4)
                     out["Actual MDI"] = actual_mdi
 
+                    # Actual_Fix_Charges = Actual MDI x 1250
                     actual_fix = format_num(float(actual_mdi) * 1250, 2)
                     out["Actual_Fix_Charges"] = actual_fix
 
+            # In_Bill_Fix_Charges (Estimated): mdi_units_1 multiplied by 1250
             mdi_u1 = parse_num(out.get("mdi_units_1") if "mdi_units_1" in out else out.get("mdi_units"))
             if mdi_u1 is not None:
                 in_bill_fix = format_num(mdi_u1 * 1250, 2)
@@ -1257,7 +1293,7 @@ class PITCBillScraper:
             return out
         except InterruptedError:
             raise
-        except Exception:
+        except Exception as exc:
             return {
                 "_account": account,
                 "BNo": bno,

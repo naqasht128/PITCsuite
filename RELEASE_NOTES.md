@@ -1,3 +1,3 @@
-• **E/Bills Downloader Crash Fix:** Resolved crash when processing bills caused by PyMuPDF 2.0 ONNX layout model lookup (missing layout_rf2.4.1+imf1.yaml resource).
-• **Dependency & Build Stabilization:** Pinned PyMuPDF to <2.0.0 and actively excluded unused ONNX layout models from PyInstaller builds to keep binary lightweight and fast.
-• **Resilient PDF Formatting:** Isolated A4 scaling and Sr. No. stamping to prevent individual PDF formatting issues from halting multi-account batch downloads.
+• **Bill Scrapper — Accuracy & Layout Parity:** Aligned bill fetching procedure with standalone Bill Scrapper architecture, fixing column offset on kWh present readings, multiplying factors (MF), and kWh units.
+• **Urdu Heading Text Filtering:** Fixed extraction of status, name_address, and due_date to properly discard bilingual Urdu translation headings and capture actual bill values.
+• **Total Units Precision:** Resolved Total Units summing multiplying factors instead of consumed units, ensuring accurate total consumption calculation.

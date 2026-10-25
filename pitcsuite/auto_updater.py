@@ -28,6 +28,11 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.100": [
+        "<b>Bill Scrapper — Accuracy & Layout Parity:</b> Aligned bill fetching procedure with standalone Bill Scrapper architecture, fixing column offset on kWh present readings, multiplying factors (MF), and kWh units.",
+        "<b>Urdu Heading Text Filtering:</b> Fixed extraction of status, name_address, and due_date to properly discard bilingual Urdu translation headings and capture actual bill values.",
+        "<b>Total Units Precision:</b> Resolved Total Units summing multiplying factors instead of consumed units, ensuring accurate total consumption calculation."
+    ],
     "v2.8.99": [
         "<b>E/Bills Downloader Crash Fix:</b> Resolved crash when processing bills caused by PyMuPDF 2.0 ONNX layout model lookup (missing layout_rf2.4.1+imf1.yaml resource).",
         "<b>Dependency & Build Stabilization:</b> Pinned PyMuPDF to <2.0.0 and actively excluded unused ONNX layout models from PyInstaller builds to keep binary lightweight and fast.",
