@@ -28,6 +28,13 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.102": [
+        "<b>High-Speed PITC Download Pipeline:</b> Streamlined DOM polling, eliminated redundant sleep delays across search, link clicks, and PDF detection, and accelerated automated keystrokes for ~10s faster processing per account.",
+        "<b>Report Type Preference Persistence:</b> Automatically remembers and restores the user's last selected Report Type across sessions, defaulting to 'Billing Adjustment' for new users.",
+        "<b>Silent Background Execution:</b> Eliminated flashing console/CMD windows by running all helper process queries and ChromeDriver silently with CREATE_NO_WINDOW flags.",
+        "<b>Graceful Chrome Exit & Crash Prompt Suppression:</b> Preserves clean exit states in browser preferences and enables graceful shutdown order, permanently preventing 'Chrome didn't shut down correctly' restore prompts.",
+        "<b>Crystal Report Load & Print Resilience:</b> Added dedicated navigation verification, extended rendering wait (up to 45s) for slow Crystal Reports, and auto-retrying print trigger with JS click fallback, eliminating 60s stalls."
+    ],
     "v2.8.101": [
         "<b>PITC Downloader — Windows 11 Chrome Driver Stability:</b> Resolved browser restart failure after 35 AC numbers on Windows 11 by adding forceful process tree cleanup, lingering lock file clearing, and anti-background Chromium flags.",
         "<b>Robust Session Recovery & Auto-Save:</b> Added session-aware login detection and automated 3-attempt restart retry loop to prevent thread crashes, saving Excel progress before restarts.",

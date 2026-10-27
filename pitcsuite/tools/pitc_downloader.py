@@ -1,10 +1,13 @@
 import os
 import re
 import time
+import json
 import base64
 import threading
 import configparser
 import subprocess
+
+NO_WINDOW_FLAGS = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0x08000000
 
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton,
@@ -47,6 +50,7 @@ def kill_profile_chrome(profile_dir):
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
             capture_output=True,
             text=True,
+            creationflags=NO_WINDOW_FLAGS,
             timeout=8,
         )
         for line in res.stdout.splitlines():
@@ -55,13 +59,18 @@ def kill_profile_chrome(profile_dir):
                 if norm_profile in cmdline.lower():
                     pid = pid_str.strip()
                     if pid.isdigit():
-                        subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True, timeout=5)
+                        subprocess.run(
+                            ["taskkill", "/F", "/PID", pid],
+                            capture_output=True,
+                            creationflags=NO_WINDOW_FLAGS,
+                            timeout=5
+                        )
     except Exception:
         pass
 
 
 def cleanup_profile_locks(profile_dir):
-    """Remove stale Chrome singleton locks from profile_dir to allow clean reopen."""
+    """Remove stale Chrome singleton locks from profile_dir and reset clean exit state."""
     if not profile_dir or not os.path.isdir(profile_dir):
         return
     lock_names = {"SingletonLock", "SingletonCookie", "SingletonSocket", "DevToolsActivePort", "lockfile"}
@@ -74,6 +83,26 @@ def cleanup_profile_locks(profile_dir):
                     pass
     except Exception:
         pass
+
+    # Ensure Preferences file marks session as clean so Chrome never prompts to restore pages
+    pref_path = os.path.join(profile_dir, "Default", "Preferences")
+    if os.path.isfile(pref_path):
+        try:
+            with open(pref_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            changed = False
+            profile = data.setdefault("profile", {})
+            if profile.get("exit_type") != "Normal":
+                profile["exit_type"] = "Normal"
+                changed = True
+            if profile.get("exited_cleanly") is not True:
+                profile["exited_cleanly"] = True
+                changed = True
+            if changed:
+                with open(pref_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f)
+        except Exception:
+            pass
 
 
 class PITCWorker(QThread):
@@ -110,6 +139,7 @@ class PITCWorker(QThread):
         # never waits for this operation.
         with self._driver_lock:
             driver = self._driver
+            self._driver = None
         if driver:
             threading.Thread(target=self._close_driver, args=(driver,), daemon=True).start()
 
@@ -117,16 +147,39 @@ class PITCWorker(QThread):
     def _close_driver(driver):
         if not driver:
             return
+        pid = None
         try:
             if hasattr(driver, "service") and driver.service and getattr(driver.service, "process", None):
                 pid = driver.service.process.pid
-                try:
-                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, timeout=5)
-                except Exception:
-                    pass
+        except Exception:
+            pass
+
+        # 1. Graceful exit first so Chrome writes clean exit_type and flushes caches
+        try:
             driver.quit()
         except Exception:
             pass
+
+        # 2. Only if the process tree is still alive after a brief grace period, terminate it
+        if pid:
+            try:
+                res = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {pid}"],
+                    capture_output=True,
+                    text=True,
+                    creationflags=NO_WINDOW_FLAGS,
+                    timeout=3
+                )
+                if str(pid) in res.stdout:
+                    time.sleep(0.5)
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/PID", str(pid)],
+                        capture_output=True,
+                        creationflags=NO_WINDOW_FLAGS,
+                        timeout=5
+                    )
+            except Exception:
+                pass
 
     def run(self):
         try:
@@ -144,6 +197,8 @@ class PITCWorker(QThread):
         try:
             self._run_impl_inner()
         except Exception as e:
+            if not self.running:
+                return
             import traceback as _tb, os as _os
             with open(_os.path.join(_os.environ['USERPROFILE'], 'Desktop', 'pitc_crash.txt'), 'w') as f: f.write(_tb.format_exc())
             self.log.emit(f"CRASH: {e}")
@@ -192,7 +247,7 @@ class PITCWorker(QThread):
         os.makedirs(dl, exist_ok=True)
         os.makedirs(self.profile_dir, exist_ok=True)
         pyautogui.FAILSAFE = False
-        pyautogui.PAUSE = 0.3
+        pyautogui.PAUSE = 0.05
 
         # ── OTP ──
         def generate_otp():
@@ -215,14 +270,74 @@ class PITCWorker(QThread):
                 diff = pdfs - existing
                 if diff:
                     path = os.path.join(dl, diff.pop())
-                    if os.path.getsize(path) < 5000:
+                    try:
+                        size = os.path.getsize(path)
+                    except OSError:
+                        size = 0
+                    if size >= 5000:
+                        return path
+                    # File may be in mid-write; brief settling delay
+                    time.sleep(0.6)
+                    try:
+                        size = os.path.getsize(path)
+                    except OSError:
+                        size = 0
+                    if size < 5000:
                         raise Exception("Invalid PDF (login/session issue)")
                     return path
                 if self.running:
-                    time.sleep(0.5)
+                    time.sleep(0.15)
             if not self.running:
                 raise InterruptedError("Download stopped by user")
             raise Exception("PDF not downloaded within timeout")
+
+        def trigger_print_and_save(drv, wt, existing_pdfs, ac_no):
+            """Trigger the print action and wait for the new PDF download with automatic retry."""
+            for attempt in range(1, 3):
+                if not self.running:
+                    return None
+
+                self.log.emit(f"Clicking Print button (attempt {attempt}/2)…")
+                try:
+                    print_btn = WebDriverWait(drv, 10, poll_frequency=0.2).until(
+                        EC.presence_of_element_located((By.ID, "ctl00_ContentPlaceHolder1_btnPrint"))
+                    )
+                    drv.execute_script("""
+                        arguments[0].scrollIntoView({behavior: 'instant', block: 'center'});
+                        arguments[0].click();
+                    """, print_btn)
+                except Exception as e:
+                    self.log.emit(f"⚠ Could not click Print button: {e}")
+                    if attempt == 2:
+                        raise
+                    time.sleep(0.8)
+                    continue
+
+                time.sleep(self.print_wait)
+                if not self.running:
+                    return None
+
+                # Perform quick, accurate print keystrokes
+                pyautogui.click(self.print_x, self.print_y)
+                time.sleep(0.25)
+                pyautogui.press("down")
+                time.sleep(0.1)
+                for key in ("tab", "tab", "tab", "enter"):
+                    pyautogui.press(key)
+                    time.sleep(0.06)
+
+                try:
+                    new_pdf = wait_for_new_pdf(existing_pdfs, timeout=12)
+                    return new_pdf
+                except Exception as ex:
+                    if not self.running:
+                        return None
+                    if attempt < 2:
+                        self.log.emit("⚠ PDF not detected within 12s; retrying Print click…")
+                        time.sleep(0.5)
+                    else:
+                        raise ex
+            return None
 
         def get_unique_name(base_name):
             base_name = str(base_name).strip()
@@ -426,11 +541,6 @@ class PITCWorker(QThread):
             doc.close()
             os.replace(stamped, pdf_path)
 
-        try:
-            chromedriver_bin = ChromeDriverManager().install()
-        except Exception:
-            chromedriver_bin = None
-
         def start_driver():
             cleanup_profile_locks(self.profile_dir)
             options = Options()
@@ -444,24 +554,47 @@ class PITCWorker(QThread):
             options.add_argument("--no-first-run")
             options.add_argument("--no-default-browser-check")
             options.add_argument("--disable-session-crashed-bubble")
+            options.add_argument("--hide-crash-restore-bubble")
+            options.add_argument("--disable-infobars")
             options.add_argument(f"--user-data-dir={self.profile_dir}")
             options.add_experimental_option("prefs", {
                 "download.default_directory": dl,
                 "download.prompt_for_download": False,
                 "download.directory_upgrade": True,
                 "safebrowsing.enabled": False,
+                "profile.exit_type": "Normal",
+                "profile.exited_cleanly": True,
             })
-            svc = Service(chromedriver_bin) if chromedriver_bin else Service(ChromeDriverManager().install())
-            drv = webdriver.Chrome(service=svc, options=options)
+            svc = Service()
+            svc.creation_flags = NO_WINDOW_FLAGS
+            try:
+                drv = webdriver.Chrome(service=svc, options=options)
+            except Exception:
+                try:
+                    wdm_path = ChromeDriverManager().install()
+                    svc_wdm = Service(wdm_path)
+                    svc_wdm.creation_flags = NO_WINDOW_FLAGS
+                    drv = webdriver.Chrome(service=svc_wdm, options=options)
+                except Exception:
+                    raise
             with self._driver_lock:
                 self._driver = drv
             return drv, WebDriverWait(drv, 40)
 
         def do_login(drv, wt):
+            if not self.running:
+                return
             selected_disco = getattr(self, "disco", "PESCO")
             self.log.emit(f"Opening cp.pitc.com.pk (DISCO: {selected_disco})…")
-            drv.get("https://cp.pitc.com.pk")
+            try:
+                drv.get("https://cp.pitc.com.pk")
+            except Exception:
+                if not self.running:
+                    return
+                raise
             time.sleep(1)
+            if not self.running:
+                return
 
             # Check if session was restored from the persistent profile
             try:
@@ -469,7 +602,8 @@ class PITCWorker(QThread):
                     self.log.emit("Existing session active ✔")
                     return
             except Exception:
-                pass
+                if not self.running:
+                    return
 
             # 1. Select the DISCO from dropdown
             disco_selected = False
@@ -486,6 +620,8 @@ class PITCWorker(QThread):
                 disco_selected = True
                 self.log.emit(f"Selected DISCO: {selected_disco} ✔")
             except Exception as ex:
+                if not self.running:
+                    return
                 self.log.emit(f"Selecting DISCO via dropdown: {ex}, attempting select fallback…")
                 try:
                     from selenium.webdriver.support.ui import Select
@@ -499,9 +635,13 @@ class PITCWorker(QThread):
                     disco_selected = True
                     self.log.emit(f"Selected DISCO via select element: {selected_disco} ✔")
                 except Exception as ex2:
+                    if not self.running:
+                        return
                     self.log.emit(f"Warning: could not select DISCO: {ex2}")
 
             time.sleep(0.5)
+            if not self.running:
+                return
 
             # 2. Fill Username and Password
             user_input = wt.until(EC.presence_of_element_located((By.NAME, "ctl00$ContentPlaceHolder1$txtUsername")))
@@ -516,6 +656,8 @@ class PITCWorker(QThread):
             if OTP_SECRET:
                 self.log.emit("Waiting for OTP…")
                 for attempt in range(5):
+                    if not self.running:
+                        return
                     try:
                         otp_box = wt.until(EC.element_to_be_clickable((By.ID, "ctl00_ContentPlaceHolder1_txtOtp")))
                         otp_code = generate_otp()
@@ -529,38 +671,55 @@ class PITCWorker(QThread):
                             return
                         time.sleep(0.5)
                     except TimeoutException:
+                        if not self.running:
+                            return
                         self.log.emit("OTP not accepted; retrying")
                     except InvalidSessionIdException:
                         raise
                     except Exception as e:
+                        if not self.running:
+                            return
                         self.log.emit(f"OTP retry: {e}")
                     time.sleep(1)
-                raise Exception("OTP verification failed")
+                if self.running:
+                    raise Exception("OTP verification failed")
 
         def ensure_logged_in(drv, wt):
+            if not self.running:
+                return
             try:
                 if drv.find_elements(By.NAME, "ctl00$ContentPlaceHolder1$txtReferenceNumber"):
                     return
             except Exception:
                 pass
+            if not self.running:
+                return
             self.log.emit("Session expired → re-login")
             do_login(drv, wt)
 
         def login_with_session_recovery(drv, wt):
+            if not self.running:
+                return drv, wt
             try:
                 do_login(drv, wt)
                 return drv, wt
             except (InvalidSessionIdException, WebDriverException) as ex:
+                if not self.running:
+                    return drv, wt
                 self.log.emit(f"Browser session lost during login ({ex}); restarting Chrome")
                 self._close_driver(drv)
                 kill_profile_chrome(self.profile_dir)
                 cleanup_profile_locks(self.profile_dir)
                 time.sleep(1)
+                if not self.running:
+                    return drv, wt
                 drv, wt = start_driver()
                 do_login(drv, wt)
                 return drv, wt
 
         def restart_browser(current_driver):
+            if not self.running:
+                return current_driver, None
             self.log.emit("Closing browser session…")
             if current_driver:
                 self._close_driver(current_driver)
@@ -568,20 +727,34 @@ class PITCWorker(QThread):
                 self._driver = None
 
             time.sleep(2)
+            if not self.running:
+                return None, None
             kill_profile_chrome(self.profile_dir)
             cleanup_profile_locks(self.profile_dir)
             time.sleep(1)
+            if not self.running:
+                return None, None
 
             last_err = None
             for attempt in range(1, 4):
+                if not self.running:
+                    return None, None
                 try:
                     self.log.emit(f"Reopening Chrome (attempt {attempt}/3)…")
                     new_drv, new_wt = start_driver()
+                    if not self.running:
+                        self._close_driver(new_drv)
+                        return None, None
                     new_drv, new_wt = login_with_session_recovery(new_drv, new_wt)
+                    if not self.running:
+                        self._close_driver(new_drv)
+                        return None, None
                     new_wt.until(EC.element_to_be_clickable((By.NAME, "ctl00$ContentPlaceHolder1$txtReferenceNumber")))
                     self.log.emit("Browser reopened and session ready ✔")
                     return new_drv, new_wt
                 except Exception as e:
+                    if not self.running:
+                        return None, None
                     last_err = e
                     self.log.emit(f"⚠ Restart attempt {attempt} failed ({e}); retrying…")
                     try:
@@ -592,7 +765,9 @@ class PITCWorker(QThread):
                     cleanup_profile_locks(self.profile_dir)
                     time.sleep(2 * attempt)
 
-            raise Exception(f"Failed to restart browser after 3 attempts: {last_err}")
+            if self.running:
+                raise Exception(f"Failed to restart browser after 3 attempts: {last_err}")
+            return None, None
 
         def open_report_link(drv, wt, href_kw):
             """Click the report link with stale-element retry."""
@@ -601,31 +776,22 @@ class PITCWorker(QThread):
                     link = wt.until(EC.element_to_be_clickable(
                         (By.XPATH, f"//a[contains(@href,'{href_kw}')]")
                     ))
-                    drv.execute_script("arguments[0].scrollIntoView({block:'center'});", link)
-                    time.sleep(0.5)
-                    drv.execute_script("arguments[0].click();", link)
+                    drv.execute_script("""
+                        arguments[0].scrollIntoView({behavior: 'instant', block: 'center'});
+                        arguments[0].click();
+                    """, link)
                     return
                 except StaleElementReferenceException:
                     self.log.emit(f"Stale element retry {attempt+1}")
-                    time.sleep(1)
+                    time.sleep(0.5)
                 except TimeoutException:
                     self.log.emit(f"Timeout retry {attempt+1}")
-                    time.sleep(1)
+                    time.sleep(0.5)
             raise Exception(f"Could not open report link: {href_kw}")
 
-        def missing_ac_status(drv):
-            """Return the workbook status when the portal reports no AC data.
-
-            The portal has used several different messages for the same
-            condition over time.  Check the visible page text before opening
-            a report and again after opening it so a stale/empty report page
-            cannot reach the Print button.
-            """
-            try:
-                text = drv.find_element(By.TAG_NAME, "body").text
-            except Exception:
+        def check_missing_in_text(text):
+            if not text:
                 return None
-
             normalized = re.sub(r"\s+", " ", text).strip().lower()
             missing_phrases = (
                 "data not exist",
@@ -644,39 +810,49 @@ class PITCWorker(QThread):
                 return "data not exist/Wrong AC No."
             return None
 
+        def missing_ac_status(drv):
+            """Return the workbook status when the portal reports no AC data."""
+            try:
+                text = drv.find_element(By.TAG_NAME, "body").text
+            except Exception:
+                return None
+            return check_missing_in_text(text)
+
+        def check_ac_in_text(text, ac_no):
+            if not text or not ac_no:
+                return False
+            compact_page = re.sub(r"[^a-z0-9]", "", text.lower())
+            compact_ac = re.sub(r"[^a-z0-9]", "", str(ac_no).lower())
+            if not compact_ac:
+                return False
+            candidates = {compact_ac}
+            if compact_ac.endswith("0") and str(ac_no).strip().endswith(".0"):
+                candidates.add(compact_ac[:-1])
+            return any(candidate in compact_page for candidate in candidates)
+
         def ac_found_on_page(drv, ac_no):
             """Check that the requested AC number is present in the report."""
             try:
                 page = drv.find_element(By.TAG_NAME, "body").text
             except Exception:
                 return False
-
-            compact_page = re.sub(r"[^a-z0-9]", "", page.lower())
-            compact_ac = re.sub(r"[^a-z0-9]", "", str(ac_no).lower())
-            if not compact_ac:
-                return False
-
-            candidates = {compact_ac}
-            # Excel may expose a numeric AC as 123456.0.  The portal normally
-            # renders the underlying integer without the trailing .0.
-            if compact_ac.endswith("0") and str(ac_no).strip().endswith(".0"):
-                candidates.add(compact_ac[:-1])
-            return any(candidate in compact_page for candidate in candidates)
+            return check_ac_in_text(page, ac_no)
 
         def wait_for_report_or_missing(drv, href_kw, timeout=8):
             """Wait briefly for either a report link or a missing-AC result."""
             report_xpath = f"//a[contains(@href,'{href_kw}')]"
 
             def ready(current_driver):
+                # Fast check: If report link appeared, return immediately without parsing body text
+                if current_driver.find_elements(By.XPATH, report_xpath):
+                    return "report"
                 missing = missing_ac_status(current_driver)
                 if missing:
                     return missing
-                if current_driver.find_elements(By.XPATH, report_xpath):
-                    return "report"
                 return False
 
             try:
-                result = WebDriverWait(drv, timeout, poll_frequency=0.25).until(ready)
+                result = WebDriverWait(drv, timeout, poll_frequency=0.2).until(ready)
                 return None if result == "report" else result
             except TimeoutException:
                 # No report link after the short search window means this AC
@@ -717,7 +893,6 @@ class PITCWorker(QThread):
                 box.send_keys(str(ac))
 
                 wait.until(EC.element_to_be_clickable((By.NAME, "ctl00$ContentPlaceHolder1$btnGo"))).click()
-                time.sleep(2)
 
                 missing_status = wait_for_report_or_missing(driver, href_kw)
                 if missing_status:
@@ -726,29 +901,58 @@ class PITCWorker(QThread):
                 else:
                     open_report_link(driver, wait, href_kw)
                     report_opened = True
+
+                    # 1. Wait for page navigation to the report URL
                     try:
-                        WebDriverWait(driver, 15).until(
-                            lambda drv: missing_ac_status(drv) or ac_found_on_page(drv, ac)
+                        WebDriverWait(driver, 15, poll_frequency=0.2).until(
+                            lambda drv: href_kw.lower() in drv.current_url.lower()
                         )
-                    except TimeoutException:
+                    except Exception:
                         pass
 
-                    missing_status = missing_ac_status(driver)
-                    if missing_status or not ac_found_on_page(driver, ac):
-                        missing_status = missing_status or "data not exist/Wrong AC No."
+                    # Switch to active report tab if opened in a new tab
+                    if len(driver.window_handles) > 1:
+                        try:
+                            driver.switch_to.window(driver.window_handles[-1])
+                        except Exception:
+                            pass
+
+                    # 2. Wait up to 45s for Crystal Report to finish loading
+                    self.log.emit("Waiting for Crystal Report to load…")
+                    report_loaded = False
+                    start_report_wait = time.time()
+                    while self.running and (time.time() - start_report_wait < 45):
+                        try:
+                            body_text = driver.find_element(By.TAG_NAME, "body").text
+                        except Exception:
+                            body_text = ""
+
+                        missing_status = check_missing_in_text(body_text)
+                        if missing_status:
+                            break
+                        if check_ac_in_text(body_text, ac):
+                            report_loaded = True
+                            break
+                        time.sleep(0.25)
+
+                    if not missing_status and not report_loaded:
+                        # Final check after 45s
+                        try:
+                            body_text = driver.find_element(By.TAG_NAME, "body").text
+                        except Exception:
+                            body_text = ""
+                        missing_status = check_missing_in_text(body_text)
+                        if not missing_status and not check_ac_in_text(body_text, ac):
+                            missing_status = "data not exist/Wrong AC No."
+
+                    if missing_status:
                         status.value = missing_status
                         self.log.emit(f"→ {missing_status}; AC not found on report page; print skipped")
-                    else:
-                        wait.until(EC.element_to_be_clickable((By.ID, "ctl00_ContentPlaceHolder1_btnPrint"))).click()
 
                 if missing_status:
                     wb.save(self.excel)
                     try:
                         if report_opened:
-                            # The report opens in the current Chrome tab. Do
-                            # not use Ctrl+W here: it can close the only
-                            # browser window and invalidate the Selenium
-                            # session for every remaining Excel row.
                             driver.back()
                             WebDriverWait(driver, 10).until(
                                 EC.presence_of_element_located(
@@ -757,16 +961,15 @@ class PITCWorker(QThread):
                             )
                     except Exception:
                         pass
-                    time.sleep(1)
+                    time.sleep(0.5)
                 else:
                     existing = {f for f in os.listdir(dl) if f.lower().endswith(".pdf")}
-                    time.sleep(self.print_wait)
+                    new_pdf = trigger_print_and_save(driver, wait, existing, ac)
+                    if not new_pdf:
+                        if not self.running:
+                            break
+                        raise Exception("PDF not downloaded within timeout")
 
-                    pyautogui.click(self.print_x, self.print_y)
-                    pyautogui.press(["down"])
-                    pyautogui.press(["tab", "tab", "tab", "enter"])
-
-                    new_pdf    = wait_for_new_pdf(existing)
                     base_name  = sr if sr else ac
                     final_name = get_unique_name(base_name)
                     final_path = os.path.join(dl, final_name)
@@ -784,28 +987,52 @@ class PITCWorker(QThread):
                     self.log.emit(f"✅ PDF created: {final_name}")
 
                     pyautogui.hotkey("ctrl", "w")
-                    time.sleep(2)
+                    time.sleep(0.5)
 
+                    # Ensure driver window is properly focused for the next search
+                    try:
+                        if len(driver.window_handles) > 1:
+                            driver.switch_to.window(driver.window_handles[0])
+                    except Exception:
+                        pass
+
+            except (InterruptedError, KeyboardInterrupt):
+                break
             except Exception as e:
+                if not self.running:
+                    break
                 traceback.print_exc()
                 status.value = "Error"
                 self.log.emit(f"⚠ ERROR: {e}")
+                try:
+                    wb.save(self.excel)
+                except Exception:
+                    pass
                 try: pyautogui.hotkey("ctrl", "w")
                 except: pass
-                time.sleep(3)
+                time.sleep(2)
+
+            if not self.running:
+                break
 
             row += 1
             processed += 1
             self.progress.emit(int((processed / max(total_rows, 1)) * 100))
 
             if processed % self.restart_after == 0:
+                if not self.running:
+                    break
                 self.log.emit(f"Processed {processed} AC Nos — restarting browser session…")
                 wb.save(self.excel)
                 try:
                     driver, wait = restart_browser(driver)
+                    if not self.running or not driver:
+                        break
                     if self.warmup > 0:
                         time.sleep(self.warmup)
                 except Exception as ex:
+                    if not self.running:
+                        break
                     self.log.emit(f"❌ Failed to restart browser: {ex}")
                     wb.save(self.excel)
                     raise
@@ -867,7 +1094,9 @@ class PITCPanel(QWidget):
         g_rep_h = QHBoxLayout(g_rep)
         self.report_cb = QComboBox()
         self.report_cb.addItems(self.REPORT_LABELS)
-        self.report_cb.setCurrentIndex(4)
+        default_idx = self.REPORT_LABELS.index("Billing Adjustment") if "Billing Adjustment" in self.REPORT_LABELS else 2
+        self.report_cb.setCurrentIndex(default_idx)
+        self.report_cb.currentTextChanged.connect(self._on_report_type_changed)
         g_rep_h.addWidget(self.report_cb); g_rep_h.addStretch()
 
         # -- Optional page range --
@@ -971,6 +1200,23 @@ class PITCPanel(QWidget):
             idx = self.disco_cb.findText(saved_disco)
             if idx >= 0:
                 self.disco_cb.setCurrentIndex(idx)
+
+            saved_report = "Billing Adjustment"
+            if settings.contains("pitc_report_type"):
+                saved_report = str(settings.value("pitc_report_type")).strip() or "Billing Adjustment"
+            idx_rep = self.report_cb.findText(saved_report)
+            if idx_rep >= 0:
+                self.report_cb.setCurrentIndex(idx_rep)
+        except Exception:
+            pass
+
+    def _on_report_type_changed(self, text):
+        report_type = (text or "").strip()
+        if not report_type:
+            return
+        try:
+            settings = QSettings("TNDevelopers", "PITCSuite")
+            settings.setValue("pitc_report_type", report_type)
         except Exception:
             pass
 
@@ -1017,6 +1263,7 @@ class PITCPanel(QWidget):
             settings.setValue("pitc_px", self.sp_px.value())
             settings.setValue("pitc_py", self.sp_py.value())
             settings.setValue("pitc_disco", self.disco_cb.currentText())
+            settings.setValue("pitc_report_type", self.report_cb.currentText())
         except Exception:
             pass
 
@@ -1076,7 +1323,9 @@ class PITCPanel(QWidget):
 
     def done(self):
         self.btn_start.setEnabled(True); self.btn_stop.setEnabled(False)
-        if not self.worker or not self.worker.stopped:
+        if self.worker and self.worker.stopped:
+            self.log_box.append("🛑 Download stopped.")
+        else:
             notify(self, "Done", "PITC Downloader completed.", folder_path=self.dl_ed.text())
 
 
