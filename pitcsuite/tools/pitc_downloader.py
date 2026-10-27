@@ -4,6 +4,7 @@ import time
 import base64
 import threading
 import configparser
+import subprocess
 
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton,
@@ -29,6 +30,50 @@ REPORT_HREF = {
 # digit.  Accept differences of up to 9 rupees when locating and highlighting
 # the requested amount.
 AMOUNT_DIFFERENCE_TOLERANCE = 9
+
+
+def kill_profile_chrome(profile_dir):
+    """Terminate lingering chrome/chromedriver processes associated with profile_dir."""
+    if not profile_dir:
+        return
+    norm_profile = os.path.normpath(profile_dir).lower()
+    ps_cmd = (
+        "$procs = Get-CimInstance Win32_Process | "
+        "Where-Object { ($_.Name -like 'chrome*' -or $_.Name -like 'chromedriver*') -and $_.CommandLine }; "
+        "foreach ($p in $procs) { Write-Output \"$($p.ProcessId)|$($p.CommandLine)\" }"
+    )
+    try:
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+        for line in res.stdout.splitlines():
+            if "|" in line:
+                pid_str, cmdline = line.split("|", 1)
+                if norm_profile in cmdline.lower():
+                    pid = pid_str.strip()
+                    if pid.isdigit():
+                        subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True, timeout=5)
+    except Exception:
+        pass
+
+
+def cleanup_profile_locks(profile_dir):
+    """Remove stale Chrome singleton locks from profile_dir to allow clean reopen."""
+    if not profile_dir or not os.path.isdir(profile_dir):
+        return
+    lock_names = {"SingletonLock", "SingletonCookie", "SingletonSocket", "DevToolsActivePort", "lockfile"}
+    try:
+        for entry in os.scandir(profile_dir):
+            if entry.name in lock_names:
+                try:
+                    os.remove(entry.path)
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
 
 class PITCWorker(QThread):
@@ -70,7 +115,15 @@ class PITCWorker(QThread):
 
     @staticmethod
     def _close_driver(driver):
+        if not driver:
+            return
         try:
+            if hasattr(driver, "service") and driver.service and getattr(driver.service, "process", None):
+                pid = driver.service.process.pid
+                try:
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, timeout=5)
+                except Exception:
+                    pass
             driver.quit()
         except Exception:
             pass
@@ -84,6 +137,8 @@ class PITCWorker(QThread):
                 self._driver = None
             if driver:
                 self._close_driver(driver)
+            kill_profile_chrome(self.profile_dir)
+            cleanup_profile_locks(self.profile_dir)
 
     def _run_impl(self):
         try:
@@ -102,7 +157,13 @@ class PITCWorker(QThread):
             from selenium.webdriver.common.keys import Keys
             from selenium.webdriver.support.ui import WebDriverWait
             from selenium.webdriver.support import expected_conditions as EC
-            from selenium.common.exceptions import InvalidSessionIdException, StaleElementReferenceException, TimeoutException
+            from selenium.common.exceptions import (
+                InvalidSessionIdException,
+                StaleElementReferenceException,
+                TimeoutException,
+                WebDriverException,
+                SessionNotCreatedException,
+            )
             from webdriver_manager.chrome import ChromeDriverManager
             from openpyxl import load_workbook
             from pypdf import PdfReader, PdfWriter
@@ -365,13 +426,24 @@ class PITCWorker(QThread):
             doc.close()
             os.replace(stamped, pdf_path)
 
+        try:
+            chromedriver_bin = ChromeDriverManager().install()
+        except Exception:
+            chromedriver_bin = None
+
         def start_driver():
+            cleanup_profile_locks(self.profile_dir)
             options = Options()
             options.add_argument("--start-maximized")
             options.add_argument("--disable-notifications")
             options.add_argument("--disable-blink-features=AutomationControlled")
             options.add_argument("--disable-dev-shm-usage")
             options.add_argument("--no-sandbox")
+            options.add_argument("--disable-background-mode")
+            options.add_argument("--disable-features=CalculateNativeWinOcclusion")
+            options.add_argument("--no-first-run")
+            options.add_argument("--no-default-browser-check")
+            options.add_argument("--disable-session-crashed-bubble")
             options.add_argument(f"--user-data-dir={self.profile_dir}")
             options.add_experimental_option("prefs", {
                 "download.default_directory": dl,
@@ -379,7 +451,8 @@ class PITCWorker(QThread):
                 "download.directory_upgrade": True,
                 "safebrowsing.enabled": False,
             })
-            drv = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+            svc = Service(chromedriver_bin) if chromedriver_bin else Service(ChromeDriverManager().install())
+            drv = webdriver.Chrome(service=svc, options=options)
             with self._driver_lock:
                 self._driver = drv
             return drv, WebDriverWait(drv, 40)
@@ -388,6 +461,15 @@ class PITCWorker(QThread):
             selected_disco = getattr(self, "disco", "PESCO")
             self.log.emit(f"Opening cp.pitc.com.pk (DISCO: {selected_disco})…")
             drv.get("https://cp.pitc.com.pk")
+            time.sleep(1)
+
+            # Check if session was restored from the persistent profile
+            try:
+                if drv.find_elements(By.NAME, "ctl00$ContentPlaceHolder1$txtReferenceNumber"):
+                    self.log.emit("Existing session active ✔")
+                    return
+            except Exception:
+                pass
 
             # 1. Select the DISCO from dropdown
             disco_selected = False
@@ -456,23 +538,61 @@ class PITCWorker(QThread):
                 raise Exception("OTP verification failed")
 
         def ensure_logged_in(drv, wt):
-            if not drv.find_elements(By.NAME, "ctl00$ContentPlaceHolder1$txtReferenceNumber"):
-                self.log.emit("Session expired → re-login")
-                do_login(drv, wt)
+            try:
+                if drv.find_elements(By.NAME, "ctl00$ContentPlaceHolder1$txtReferenceNumber"):
+                    return
+            except Exception:
+                pass
+            self.log.emit("Session expired → re-login")
+            do_login(drv, wt)
 
         def login_with_session_recovery(drv, wt):
             try:
                 do_login(drv, wt)
                 return drv, wt
-            except InvalidSessionIdException:
-                self.log.emit("Browser session lost during OTP; restarting Chrome")
-                try:
-                    drv.quit()
-                except Exception:
-                    pass
+            except (InvalidSessionIdException, WebDriverException) as ex:
+                self.log.emit(f"Browser session lost during login ({ex}); restarting Chrome")
+                self._close_driver(drv)
+                kill_profile_chrome(self.profile_dir)
+                cleanup_profile_locks(self.profile_dir)
+                time.sleep(1)
                 drv, wt = start_driver()
                 do_login(drv, wt)
                 return drv, wt
+
+        def restart_browser(current_driver):
+            self.log.emit("Closing browser session…")
+            if current_driver:
+                self._close_driver(current_driver)
+            with self._driver_lock:
+                self._driver = None
+
+            time.sleep(2)
+            kill_profile_chrome(self.profile_dir)
+            cleanup_profile_locks(self.profile_dir)
+            time.sleep(1)
+
+            last_err = None
+            for attempt in range(1, 4):
+                try:
+                    self.log.emit(f"Reopening Chrome (attempt {attempt}/3)…")
+                    new_drv, new_wt = start_driver()
+                    new_drv, new_wt = login_with_session_recovery(new_drv, new_wt)
+                    new_wt.until(EC.element_to_be_clickable((By.NAME, "ctl00$ContentPlaceHolder1$txtReferenceNumber")))
+                    self.log.emit("Browser reopened and session ready ✔")
+                    return new_drv, new_wt
+                except Exception as e:
+                    last_err = e
+                    self.log.emit(f"⚠ Restart attempt {attempt} failed ({e}); retrying…")
+                    try:
+                        self._close_driver(new_drv)
+                    except Exception:
+                        pass
+                    kill_profile_chrome(self.profile_dir)
+                    cleanup_profile_locks(self.profile_dir)
+                    time.sleep(2 * attempt)
+
+            raise Exception(f"Failed to restart browser after 3 attempts: {last_err}")
 
         def open_report_link(drv, wt, href_kw):
             """Click the report link with stale-element retry."""
@@ -679,13 +799,16 @@ class PITCWorker(QThread):
             self.progress.emit(int((processed / max(total_rows, 1)) * 100))
 
             if processed % self.restart_after == 0:
-                self.log.emit("Restarting browser session…")
-                driver.quit(); time.sleep(6)
-                driver, wait = start_driver()
-                driver, wait = login_with_session_recovery(driver, wait)
-                wait.until(EC.element_to_be_clickable((By.NAME, "ctl00$ContentPlaceHolder1$txtReferenceNumber")))
-                if self.warmup > 0:
-                    time.sleep(self.warmup)
+                self.log.emit(f"Processed {processed} AC Nos — restarting browser session…")
+                wb.save(self.excel)
+                try:
+                    driver, wait = restart_browser(driver)
+                    if self.warmup > 0:
+                        time.sleep(self.warmup)
+                except Exception as ex:
+                    self.log.emit(f"❌ Failed to restart browser: {ex}")
+                    wb.save(self.excel)
+                    raise
 
         wb.save(self.excel)
 

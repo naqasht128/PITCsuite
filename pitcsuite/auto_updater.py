@@ -28,6 +28,11 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.101": [
+        "<b>PITC Downloader — Windows 11 Chrome Driver Stability:</b> Resolved browser restart failure after 35 AC numbers on Windows 11 by adding forceful process tree cleanup, lingering lock file clearing, and anti-background Chromium flags.",
+        "<b>Robust Session Recovery & Auto-Save:</b> Added session-aware login detection and automated 3-attempt restart retry loop to prevent thread crashes, saving Excel progress before restarts.",
+        "<b>Windows Efficiency Mode (EcoQoS) Handling:</b> Hardened Chrome shutdown and reopen pipeline against Windows 11 process throttling and file handle delays."
+    ],
     "v2.8.100": [
         "<b>Bill Scrapper — Accuracy & Layout Parity:</b> Aligned bill fetching procedure with standalone Bill Scrapper architecture, fixing column offset on kWh present readings, multiplying factors (MF), and kWh units.",
         "<b>Urdu Heading Text Filtering:</b> Fixed extraction of status, name_address, and due_date to properly discard bilingual Urdu translation headings and capture actual bill values.",

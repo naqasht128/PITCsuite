@@ -1,3 +1,3 @@
-• **Bill Scrapper — Accuracy & Layout Parity:** Aligned bill fetching procedure with standalone Bill Scrapper architecture, fixing column offset on kWh present readings, multiplying factors (MF), and kWh units.
-• **Urdu Heading Text Filtering:** Fixed extraction of status, name_address, and due_date to properly discard bilingual Urdu translation headings and capture actual bill values.
-• **Total Units Precision:** Resolved Total Units summing multiplying factors instead of consumed units, ensuring accurate total consumption calculation.
+• **PITC Downloader — Windows 11 Chrome Driver Stability:** Resolved browser restart failure after 35 AC numbers on Windows 11 by adding forceful process tree cleanup, lingering lock file clearing, and anti-background Chromium flags.
+• **Robust Session Recovery & Auto-Save:** Added session-aware login detection and automated 3-attempt restart retry loop to prevent thread crashes, saving Excel progress before restarts.
+• **Windows Efficiency Mode (EcoQoS) Handling:** Hardened Chrome shutdown and reopen pipeline against Windows 11 process throttling and file handle delays.
