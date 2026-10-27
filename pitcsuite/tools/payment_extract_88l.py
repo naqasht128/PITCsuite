@@ -175,7 +175,8 @@ class PaymentExtract88LWorker(QThread):
             workbook = load_workbook(self.excel_path)
             sheet = workbook.active
             headers = {safe_text(c.value): c.column for c in sheet[1] if c.value is not None}
-            required = ["BN", "Sdiv", "AC No.", "Para Sr. No."]
+            sr_header = "Sr. No." if "Sr. No." in headers else ("Para Sr. No." if "Para Sr. No." in headers else "Sr. No.")
+            required = ["BN", "Sdiv", "AC No.", sr_header]
             missing = [name for name in required if name not in headers]
             if missing:
                 self.log.emit("ERROR: Excel is missing columns: " + ", ".join(missing)); self.finished.emit(); return
@@ -195,17 +196,17 @@ class PaymentExtract88LWorker(QThread):
                     self.log.emit("⛔ Stopped."); break
                 batch = safe_text(sheet.cell(row_number, headers["BN"]).value).zfill(2)
                 sub_div, ref_no = safe_text(sheet.cell(row_number, headers["Sdiv"]).value), safe_text(sheet.cell(row_number, headers["AC No."]).value)
-                para_sr = safe_text(sheet.cell(row_number, headers["Para Sr. No."]).value)
+                para_sr = safe_text(sheet.cell(row_number, headers[sr_header]).value)
                 if para_sr.lower() == "nan":
                     para_sr = ""
                 resolved_ref = consumer_reference(ref_no, sub_div)
-                # Para Sr. No. is optional.  When it is blank, retain the row
+                # Sr. No. is optional.  When it is blank, retain the row
                 # and use the complete ledger reference as the output key:
                 # BN + SDiv + the resolved 7-digit ledger AC.
                 sub_div_digits = re.sub(r"\D", "", sub_div).zfill(5)
                 output_id = para_sr or f"{batch}{sub_div_digits}{resolved_ref}"
                 if not output_id:
-                    self.log.emit(f"⚠ Row {row_number}: no Para Sr. No. or complete reference; skipped")
+                    self.log.emit(f"⚠ Row {row_number}: no Sr. No. or complete reference; skipped")
                     continue
                 self.log.emit(f"🔍 BN {batch} | SDiv {sub_div} | AC No. {ref_no}")
                 temp_pdfs, total_amount, page_number = [], 0.0, 1
@@ -242,7 +243,8 @@ class PaymentExtract88LWorker(QThread):
                         temp = Path(self.output_folder) / f"temp_{output_id}_{page_number}.pdf"
                         label = ""
                         if para_sr:
-                            label_prefix = f"Para Sr. No. {para_sr}"
+                            clean_sr = re.sub(r'^(?:(?:para\s*)?sr\.?\s*(?:no\.?)?\s*:?\s*)', '', para_sr, flags=re.IGNORECASE).strip()
+                            label_prefix = f"Sr. No. {clean_sr or para_sr}"
                             label = label_prefix if page_number == 1 else f"{label_prefix} ({page_number})"
                         self.create_pdf(page, temp, label, resolved_ref, amount, date_dd_mm, canvas, page_size, colors)
                         temp_pdfs.append(temp); page_number += 1
@@ -318,7 +320,7 @@ class PaymentExtract88LPanel(QWidget):
         if path: edit.setText(path)
 
     def get_template(self):
-        download_template(self, headers=["BN", "Sdiv", "AC No.", "Para Sr. No."], default_name="PaymentExtract_88L_Template.xlsx")
+        download_template(self, headers=["BN", "Sdiv", "AC No.", "Sr. No."], default_name="PaymentExtract_88L_Template.xlsx")
 
     def start(self):
         if not all((self.excel_ed.text(), self.root_ed.text(), self.output_ed.text())):

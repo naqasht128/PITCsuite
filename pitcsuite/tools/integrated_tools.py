@@ -434,7 +434,7 @@ class CP52PostingCheckerPanel(QWidget):
     def _download_template(self):
         download_template(
             self,
-            ["AC No", "Amount", "Para Sr No.", "Debit Code", "Found Amount", "Remarks"],
+            ["AC No", "Amount", "Sr. No.", "Debit Code", "Found Amount", "Remarks"],
             "CP52_Posting_Checker_Template.xlsx",
         )
 

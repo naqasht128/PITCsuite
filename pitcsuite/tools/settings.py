@@ -147,5 +147,5 @@ class SettingsPanel(QWidget):
 # ──────────────────────────────────────────────────────────────
 #  TOOL 10 — Extract Specific PITC Page  (ExtPITC.py)
 #  Search Criteria: month (Feb-26 → Feb - 2026) or any number
-#  Extracts matching page · Highlights matches · Stamps Para Sr. No.
+#  Extracts matching page · Highlights matches · Stamps Sr. No.
 # ──────────────────────────────────────────────────────────────

@@ -946,7 +946,7 @@ class App:
         wb = Workbook()
         ws = wb.active
         ws.title = "Data"
-        headers = ["AC No", "Amount", "Para Sr No.", "Debit Code", "Found Amount", "Remarks"]
+        headers = ["AC No", "Amount", "Sr. No.", "Debit Code", "Found Amount", "Remarks"]
         for column, header in enumerate(headers, 1):
             ws.cell(1, column).value = header
             ws.cell(1, column).font = ws.cell(1, column).font.copy(bold=True)

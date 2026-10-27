@@ -81,7 +81,7 @@ def notify(parent, title, message, critical=False, file_path=None, folder_path=N
 
 # ──────────────────────────────────────────────────────────────
 #  TOOL 1 — PITC Downloader (CDS10)
-#  All report types · OTP login · Month+Amount filter · Highlight · Para Sr. Stamp
+#  All report types · OTP login · Month+Amount filter · Highlight · Sr. No. Stamp
 # ──────────────────────────────────────────────────────────────
 
 NAV_STYLE = """

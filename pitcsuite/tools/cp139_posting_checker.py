@@ -399,7 +399,7 @@ def download_cp139_template(save_path: str) -> None:
     ws = wb.active
     ws.title = "Template"
 
-    headers = ["AC No.", "Para Sr. No.", "Remarks"]
+    headers = ["AC No.", "Sr. No.", "Remarks"]
     hdr_font = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
     hdr_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
     hdr_align = Alignment(horizontal="center", vertical="center")
@@ -424,15 +424,15 @@ def download_cp139_template(save_path: str) -> None:
         ("10269310676106", "3"),
         ("14269310877502", "4"),
     ]
-    for row_idx, (ac, para) in enumerate(samples, 2):
+    for row_idx, (ac, sr_no) in enumerate(samples, 2):
         c1 = ws.cell(row=row_idx, column=1, value=ac)
-        c2 = ws.cell(row=row_idx, column=2, value=para)
+        c2 = ws.cell(row=row_idx, column=2, value=sr_no)
         c1.alignment = Alignment(horizontal="center")
         c2.alignment = Alignment(horizontal="center")
         c1.border = thin_border
         c2.border = thin_border
 
-    note_cell = ws.cell(row=7, column=1, value="Note: Enter the complete 14-digit Account Numbers in Col A and corresponding Para Sr. Nos in Col B. Remarks in Col C will be updated automatically.")
+    note_cell = ws.cell(row=7, column=1, value="Note: Enter the complete 14-digit Account Numbers in Col A and corresponding Sr. Nos in Col B. Remarks in Col C will be updated automatically.")
     note_cell.font = Font(name="Segoe UI", size=9, italic=True, color="555555")
 
     ws.column_dimensions["A"].width = 25
@@ -558,7 +558,7 @@ def render_highlighted_txt_page(
     stamp_para: bool = True,
     para_stamps: Optional[List[str]] = None
 ) -> None:
-    """Renders a text page to landscape A4 with yellow highlight over matched lines and optional Para stamp."""
+    """Renders a text page to landscape A4 with yellow highlight over matched lines and optional Sr. No. stamp."""
     pw, ph = landscape(A4)
     margin_x = 14
     margin_y = 16
@@ -593,10 +593,10 @@ def render_highlighted_txt_page(
         if stamp_vals:
             cleaned_stamps = []
             for s in stamp_vals:
-                cleaned = re.sub(r'^(?:para\s*(?:sr\.?\s*(?:no\.?)?)?\s*:?\s*)', '', s, flags=re.IGNORECASE).strip()
+                cleaned = re.sub(r'^(?:(?:para\s*)?sr\.?\s*(?:no\.?)?\s*:?\s*)', '', s, flags=re.IGNORECASE).strip()
                 cleaned_stamps.append(cleaned if cleaned else s)
             joined_vals = ", ".join(cleaned_stamps)
-            stamp_text = f"Para Sr. No. {joined_vals}"
+            stamp_text = f"Sr. No. {joined_vals}"
             c.setFont("Helvetica-Bold", 16)
             c.setFillColor(black)
             tw = c.stringWidth(stamp_text, "Helvetica-Bold", 16)
@@ -629,10 +629,10 @@ def render_highlighted_pdf_source_page(
         if stamp_vals:
             cleaned_stamps = []
             for s in stamp_vals:
-                cleaned = re.sub(r'^(?:para\s*(?:sr\.?\s*(?:no\.?)?)?\s*:?\s*)', '', s, flags=re.IGNORECASE).strip()
+                cleaned = re.sub(r'^(?:(?:para\s*)?sr\.?\s*(?:no\.?)?\s*:?\s*)', '', s, flags=re.IGNORECASE).strip()
                 cleaned_stamps.append(cleaned if cleaned else s)
             joined_vals = ", ".join(cleaned_stamps)
-            stamp_text = f"Para Sr. No. {joined_vals}"
+            stamp_text = f"Sr. No. {joined_vals}"
             c.setFont("Helvetica-Bold", 16)
             c.setFillColor(black)
             tw = c.stringWidth(stamp_text, "Helvetica-Bold", 16)
@@ -666,7 +666,7 @@ def export_matching_results_to_excel(results: List[Dict[str, Any]], out_path: st
 
     headers = [
         "Sr.", "Input AC No.", "Matched Ref# in CP139",
-        "Para Sr. No.", "Status", "Page No.", "Grand Total", "Posting Status",
+        "Sr. No.", "Status", "Page No.", "Grand Total", "Posting Status",
         "Source Report", "Generated PDF File"
     ]
 
@@ -993,11 +993,11 @@ class CP139Worker(QThread):
             matches = p_data["matches"]
 
             # Naming logic:
-            # In separate pdf output: files name are on AC Nos, and if Para Sr. No. is also checked then File names are on Para Sr. Nos.
+            # In separate pdf output: files name are on AC Nos, and if Sr. No. is also checked then File names are on Sr. Nos.
             page_paras = [m.get("para_sr", "").strip() for m in matches if m.get("para_sr", "").strip()]
             clean_paras = []
             for p in page_paras:
-                cp = re.sub(r'^(?:para\s*(?:sr\.?\s*(?:no\.?)?)?\s*:?\s*)', '', p, flags=re.IGNORECASE).strip()
+                cp = re.sub(r'^(?:(?:para\s*)?sr\.?\s*(?:no\.?)?\s*:?\s*)', '', p, flags=re.IGNORECASE).strip()
                 clean_paras.append(cp if cp else p)
 
             page_acs = [m.get("input_ac", "").strip() or m.get("matched_cand", "").strip() for m in matches if (m.get("input_ac") or m.get("matched_cand"))]
@@ -1233,7 +1233,7 @@ class CP139PostingCheckerPanel(QWidget):
         self.separate_pdf_chk.toggled.connect(self._on_separate_pdf_toggled)
         chk_row.addWidget(self.separate_pdf_chk)
 
-        self.stamp_para_chk = QCheckBox("Para No Stamped")
+        self.stamp_para_chk = QCheckBox("Sr. No. Stamped")
         self.stamp_para_chk.setChecked(True)
         self.stamp_para_chk.setEnabled(False)
         chk_row.addWidget(self.stamp_para_chk)
@@ -1243,7 +1243,7 @@ class CP139PostingCheckerPanel(QWidget):
         excel_row = QHBoxLayout()
         excel_row.addWidget(QLabel("Excel input (.xlsx):"))
         self.excel_in_ed = QLineEdit()
-        self.excel_in_ed.setPlaceholderText("Select Excel workbook containing Col A: AC No., Col B: Para Sr. No.")
+        self.excel_in_ed.setPlaceholderText("Select Excel workbook containing Col A: AC No., Col B: Sr. No.")
         self.excel_in_ed.setEnabled(False)
         excel_row.addWidget(self.excel_in_ed, 1)
 

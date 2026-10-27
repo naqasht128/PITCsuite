@@ -1061,7 +1061,7 @@ class PITCPanel(QWidget):
         layout.setSpacing(10)
 
         layout.addWidget(lbl("PITC Downloader", bold=True, color="#7eb8f7"))
-        layout.addWidget(lbl("OTP login  ·  All report types  ·  Month & Amount filter  ·  Highlight  ·  Para Sr. Stamp", color="#556"))
+        layout.addWidget(lbl("OTP login  ·  All report types  ·  Month & Amount filter  ·  Highlight  ·  Sr. No. Stamp", color="#556"))
         layout.addWidget(hline())
 
         # ── Excel + Template ──
