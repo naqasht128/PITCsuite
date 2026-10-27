@@ -12,7 +12,6 @@ from PySide6.QtGui import QPixmap
 from pitcsuite.icons import app_icon, pdf_merger_icon, get_icon
 from pitcsuite.ui_helpers import NAV_STYLE
 from pitcsuite.tools.pitc_downloader import PITCPanel
-from pitcsuite.tools.extract_page import ExtractPagePanel
 from pitcsuite.tools.bill_downloader import BillSoftPanel
 from pitcsuite.tools.payment_extract_88l import PaymentExtract88LPanel
 from pitcsuite.tools.pdf_merger import PDFMerger
@@ -37,7 +36,6 @@ from pitcsuite.tools.integrated_tools import (
 
 TOOLS = [
     ("PITC Report Downloader",        PITCPanel, "pitc_down"),
-    ("Extract Pages from PITC Reports", ExtractPagePanel, "extract_pages"),
     ("E/Bills Downloader",            BillSoftPanel, "ebills"),
     ("Bill Scrapper",                  BillScraperPanel, "bill_scrap"),
     ("Payment Extractor from 88L",    PaymentExtract88LPanel, "payment_ext"),
