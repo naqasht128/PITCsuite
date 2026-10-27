@@ -34,7 +34,7 @@ DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
         "<b>Silent Background Execution:</b> Eliminated flashing console/CMD windows by running all helper process queries and ChromeDriver silently with CREATE_NO_WINDOW flags.",
         "<b>Graceful Chrome Exit & Crash Prompt Suppression:</b> Preserves clean exit states in browser preferences and enables graceful shutdown order, permanently preventing 'Chrome didn't shut down correctly' restore prompts.",
         "<b>Crystal Report Load & Print Resilience:</b> Added dedicated navigation verification, extended rendering wait (up to 45s) for slow Crystal Reports, and auto-retrying print trigger with JS click fallback, eliminating 60s stalls.",
-        "<b>Modularized Standalone Utilities:</b> Extracted 'Extract Pages from PITC Reports' into its own dedicated standalone desktop project, streamlining PITCSuite."
+        "<b>Modularized Standalone Utilities:</b> Extracted 'Extract Pages from PITC Reports' and 'Double CR Checker' into dedicated standalone desktop projects, streamlining PITCSuite."
     ],
     "v2.8.101": [
         "<b>PITC Downloader — Windows 11 Chrome Driver Stability:</b> Resolved browser restart failure after 35 AC numbers on Windows 11 by adding forceful process tree cleanup, lingering lock file clearing, and anti-background Chromium flags.",

@@ -11,7 +11,7 @@
 
 ## 🌟 Key Highlights
 
-- **15 Integrated Tools:** Complete workflow coverage from automated portal ingestion to billing reconciliation and batch printing, now including Government Assessment & Realization extraction and CP 139 posting verification.
+- **14 Integrated Tools:** Complete workflow coverage from automated portal ingestion to billing reconciliation and batch printing, now including Government Assessment & Realization extraction and CP 139 posting verification.
 - **Polished UX/UI:** Crisp SVG icons, ergonomic file/folder opening directly from completion dialogs, and a responsive PySide6 dark theme.
 - **Fusion Dark Design System:** Clean dark theme with ergonomic color hierarchy (vibrant green primary actions, orange secondary actions, and high-legibility typography).
 - **Collapsible Navigation Drawer:** Fast switching between full label mode and an icon-only compact sidebar.
@@ -33,7 +33,6 @@
 | **📑 CP 139 Posting Checker** | Reconciliation | Parses WAPDA RCP-139 Unidentified Cash / Debtor's Adjustment posting reports (.txt and .pdf), extracts Ref#, S/Div, Grand Total, and posting status with error codes into styled Excel spreadsheets. |
 | **🧾 CP 22T Posting Checker** | Reconciliation | Verifies and validates CP22T revenue posting transactions against reference records. |
 | **⚡ CP21c Converter** | Data Extraction | Extracts CP-21C electricity meter reading data from PDF and exports it to a structured single-sheet Excel file. |
-| **🔁 Double CR Checker** | Reconciliation | Audits consumer ledger records to detect duplicate consumer references (CR) and redundant postings. |
 | **📊 Govt Assessment Realization** | Data Extraction | Parses WAPDA Assessment & Realization reports for Government Departments (.txt), extracts S/Div, 14-digit Ref#, Status, Name & Address, Tariff, Department Code, Arrear Age, OP. Balance, Payments Normal, Adjustor, Write Off, and Net Arrear into styled Excel spreadsheets. |
 | **📑 PDF Merger** | PDF Processing | Multi-folder merging (up to 5 folders simultaneously), natural numerical ordering, duplex/N-up blank-page padding, and filename header/footer stamping. |
 | **📂 File Checker** | Data Audit | Scans directories to identify missing serial numbers, sequence gaps, or malformed filenames in batch outputs. |
@@ -66,7 +65,6 @@ PITC Suite
 │       ├── cp21c_converter.py
 │       ├── cp22t_posting_checker.py
 │       ├── cp52_posting_checker_logic.py
-│       ├── double_cr.py
 │       ├── file_checker.py
 │       ├── file_renamer.py
 │       ├── integrated_tools.py

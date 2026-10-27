@@ -114,6 +114,3 @@ class SrNoCheckerPanel(QWidget):
         self.status_lbl.setText("Status: Failed"); notify(self, "Error", message, critical=True)
 
 
-# ──────────────────────────────────────────────────────────────
-#  TOOL 11 — Double CR Checker (DoubleCRchecker.py)
-# ──────────────────────────────────────────────────────────────

@@ -17,7 +17,6 @@ from pitcsuite.tools.payment_extract_88l import PaymentExtract88LPanel
 from pitcsuite.tools.pdf_merger import PDFMerger
 from pitcsuite.tools.file_checker import SrNoCheckerPanel
 from pitcsuite.tools.file_renamer import FileRenamerPanel
-from pitcsuite.tools.double_cr import DoubleCRPanel
 from pitcsuite.tools.settings import SettingsPanel
 from pitcsuite.auto_updater import (
     check_for_updates, get_current_version, get_release_notes,
@@ -44,7 +43,6 @@ TOOLS = [
     ("CP 139 Posting Check/PDF",      CP139PostingCheckerPanel, "cp139"),
     ("CP 22T Posting Checker",        CP22TCheckerPanel, "cp22t"),
     ("CP21c Converter",               CP21cConverterPanel, "cp21c"),
-    ("Double CR Checker",             DoubleCRPanel, "double_cr"),
     ("Govt Assessment Realization",   AssessmentRealizationPanel, "assessment_realization"),
     ("PDF Merger",                    PDFMerger, "pdf_merger"),
     ("File Mover",                     FileMoverPanel, "file_mover"),
