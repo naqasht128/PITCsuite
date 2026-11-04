@@ -28,6 +28,11 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.103": [
+        "<b>File Renamer & File Mover Dialog Fix:</b> Resolved message box overflowing screen on large batches of skipped/missing files by introducing auto-scroll details and fixed dialog height boundaries.",
+        "<b>Keyboard Dismissal (Esc & Enter):</b> Added full keyboard control so users can immediately dismiss completion and alert dialogs without getting stuck.",
+        "<b>File Mover In-Panel Log Box:</b> Added dedicated live log box to File Mover panel to log missing files in real-time alongside Excel status updates."
+    ],
     "v2.8.102": [
         "<b>PITC Downloader — Windows 11 Chrome Driver Stability:</b> Resolved browser restart failure after 35 AC numbers on Windows 11 by adding forceful process tree cleanup, lingering lock file clearing, and anti-background Chromium flags.",
         "<b>Robust Session Recovery & Auto-Save:</b> Added session-aware login detection and automated 3-attempt restart retry loop to prevent thread crashes, saving Excel progress before restarts.",
@@ -141,7 +146,7 @@ def get_current_version() -> str:
         import pitcsuite
         return f"v{pitcsuite.__version__.lstrip('vV')}"
     except Exception:
-        return "v2.8.93"
+        return "v2.8.103"
 
 
 def get_release_notes(ver: str) -> List[str]:

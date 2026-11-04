@@ -487,7 +487,8 @@ class FileMoverPanel(QWidget):
             row = QHBoxLayout(); row.addWidget(QLabel(label)); edit.setReadOnly(True); edit.setProperty("preferred_width", 245); row.addWidget(edit, 1); button = QPushButton("Browse"); button.clicked.connect(lambda _, e=edit, k=kind: self._browse(e, k)); row.addWidget(button); form.addLayout(row)
         layout.addWidget(group)
         self.start_btn = QPushButton("▶  MOVE FILES"); self.start_btn.setStyleSheet(START_BTN); self.start_btn.clicked.connect(self._start); layout.addWidget(self.start_btn)
-        self.status = QLabel("Status: Idle"); layout.addWidget(self.status); layout.addStretch()
+        self.status = QLabel("Status: Idle"); self.status.setStyleSheet("color:#4a90d9;"); layout.addWidget(self.status)
+        self.log_box = QTextEdit(); self.log_box.setReadOnly(True); layout.addWidget(self.log_box)
 
     def _browse(self, edit, kind):
         path = QFileDialog.getOpenFileName(self, "Excel file", "", "Excel files (*.xlsx *.xls)")[0] if kind == "excel" else QFileDialog.getExistingDirectory(self, "Select folder")
@@ -496,21 +497,32 @@ class FileMoverPanel(QWidget):
     def _start(self):
         if not all((self.excel_ed.text(), self.source_ed.text(), self.destination_ed.text())):
             QMessageBox.warning(self, "Missing input", "Select the Excel file, source folder, and destination folder."); return
-        self.start_btn.setEnabled(False); self.status.setText("Status: Moving files...")
+        self.log_box.clear(); self.start_btn.setEnabled(False); self.status.setText("Status: Moving files...")
         self.worker = FileMoverWorker(self.excel_ed.text(), self.source_ed.text(), self.destination_ed.text())
         self.worker.progress.connect(self.status.setText)
         self.worker.done.connect(self._done); self.worker.failed.connect(self._failed); self.worker.finished.connect(lambda: self.start_btn.setEnabled(True)); self.worker.start()
 
     def _done(self, moved, missing):
-        self.status.setText(f"Status: Completed — moved {moved} file(s), {len(missing)} not found")
-        message = (
-            f"Moved {moved} file(s).\n"
-            f"Status updated in Column B of Excel file.\n\n"
-            + ("Missing files:\n\n" + "\n".join(missing) if missing else "All files moved successfully.")
-        )
-        notify(self, "Completed", message, file_path=self.excel_ed.text(), folder_path=self.destination_ed.text())
+        if missing:
+            for item in missing:
+                self.log_box.append(f"⚠️ Not Found: {item}")
+            if moved > 0:
+                self.status.setText(f"Status: Completed — moved {moved} file(s), {len(missing)} not found")
+            else:
+                self.status.setText(f"Status: Completed with issues — 0 files moved, {len(missing)} not found")
+            message = f"Moved {moved} file(s) with {len(missing)} not found.\nStatus updated in Column B of Excel file."
+            details = "Missing files:\n" + "\n".join(missing)
+        else:
+            self.status.setText(f"Status: Completed — moved {moved} file(s) successfully")
+            message = f"Moved {moved} file(s) successfully.\nStatus updated in Column B of Excel file."
+            details = None
 
-    def _failed(self, message): self.status.setText("Status: Failed"); notify(self, "Error", message, critical=True)
+        notify(self, "File Mover", message, file_path=self.excel_ed.text(), folder_path=self.destination_ed.text(), details=details)
+
+    def _failed(self, message):
+        self.status.setText("Status: Failed")
+        self.log_box.append(f"❌ Error: {message}")
+        notify(self, "File Mover Error", message, critical=True)
 
 
 class CP52Worker(QThread):

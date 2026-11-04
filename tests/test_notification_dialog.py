@@ -6,6 +6,7 @@ from PySide6.QtGui import QKeyEvent
 
 from pitcsuite.ui_helpers import NotificationDialog, notify
 from pitcsuite.tools.file_renamer import FileRenamerPanel
+from pitcsuite.tools.integrated_tools import FileMoverPanel
 
 
 class TestNotificationDialog(unittest.TestCase):
@@ -105,6 +106,25 @@ class TestNotificationDialog(unittest.TestCase):
         text_edits = active_dlg.findChildren(QTextEdit)
         self.assertEqual(len(text_edits), 1)
         self.assertIn("Skipped / issues:", text_edits[0].toPlainText())
+        active_dlg.close()
+
+    def test_file_mover_done_populates_log_and_dialog(self):
+        panel = FileMoverPanel()
+        missing = [f"10{i}" for i in range(2, 10)]
+        panel._done(1, missing)
+
+        # Verify log_box contains the missing files
+        log_text = panel.log_box.toPlainText()
+        self.assertIn("⚠️ Not Found: 102", log_text)
+        self.assertIn("⚠️ Not Found: 109", log_text)
+
+        # Verify active notification dialog was opened with details
+        active = getattr(panel, "_active_notifications", [])
+        self.assertEqual(len(active), 1)
+        active_dlg = active[0]
+        text_edits = active_dlg.findChildren(QTextEdit)
+        self.assertEqual(len(text_edits), 1)
+        self.assertIn("Missing files:", text_edits[0].toPlainText())
         active_dlg.close()
 
 
