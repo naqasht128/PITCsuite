@@ -190,10 +190,24 @@ class FileRenamerPanel(QWidget):
     def _progress(self, message): self.log_box.append(message)
 
     def _done(self, completed, issue_count, issues):
-        self.status.setText(f"Status: Completed — {completed} file(s) processed")
-        message = f"Processed {completed} file(s)." + (("\n\nSkipped / issues:\n" + "\n".join(issues)) if issues else "")
+        if issues:
+            for issue in issues:
+                self.log_box.append(f"⚠️ {issue}")
+            if completed > 0:
+                self.status.setText(f"Status: Completed — {completed} file(s) processed, {len(issues)} issue(s)")
+            else:
+                self.status.setText(f"Status: Completed with issues — 0 files processed, {len(issues)} issue(s)")
+            message = f"Processed {completed} file(s) with {len(issues)} issue(s)."
+            details = "Skipped / issues:\n" + "\n".join(issues)
+        else:
+            self.status.setText(f"Status: Completed — {completed} file(s) processed")
+            message = f"Processed {completed} file(s) successfully."
+            details = None
+
         folder = self.destination_ed.text().strip() or self.source_ed.text().strip()
-        notify(self, "File Renamer", message, folder_path=folder)
+        notify(self, "File Renamer", message, folder_path=folder, details=details)
 
     def _failed(self, message):
-        self.status.setText("Status: Failed"); notify(self, "File Renamer error", message, critical=True)
+        self.status.setText("Status: Failed")
+        self.log_box.append(f"❌ Error: {message}")
+        notify(self, "File Renamer error", message, critical=True)
