@@ -4,7 +4,8 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QStackedWidget, QFrame, QLineEdit, QSpinBox, QSizePolicy, QScrollArea,
-    QAbstractScrollArea, QDialog, QApplication, QGraphicsOpacityEffect
+    QAbstractScrollArea, QDialog, QApplication, QGraphicsOpacityEffect,
+    QGroupBox
 )
 from PySide6.QtCore import (
     Qt, QSize, QTimer, QSettings, QEvent, QObject, QPropertyAnimation,
@@ -59,7 +60,7 @@ class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("About PITC Suite")
-        self.setFixedSize(500, 500)
+        self.setFixedSize(480, 480)
         self.setModal(True)
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
 
@@ -72,8 +73,8 @@ class AboutDialog(QDialog):
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(22, 20, 22, 18)
+        layout.setSpacing(10)
 
         # App Header
         header_row = QHBoxLayout()
@@ -83,10 +84,10 @@ class AboutDialog(QDialog):
         title_vbox.setSpacing(2)
         
         title_lbl = QLabel("PITC Suite")
-        title_lbl.setStyleSheet("color: #60a5fa; font-size: 16pt; font-weight: bold; letter-spacing: 0.5px;")
+        title_lbl.setStyleSheet("color: #60a5fa; font-size: 15pt; font-weight: bold; letter-spacing: 0.5px;")
         title_vbox.addWidget(title_lbl)
 
-        ver_lbl = QLabel(f"Version {get_current_version()} · Windows Edition")
+        ver_lbl = QLabel(f"Version {get_current_version()} · Antigravity Edition")
         ver_lbl.setStyleSheet("color: #94a3b8; font-size: 8.5pt;")
         title_vbox.addWidget(ver_lbl)
         
@@ -103,7 +104,7 @@ class AboutDialog(QDialog):
         lic_card = QFrame()
         lic_card.setStyleSheet("""
             QFrame {
-                background: #121722;
+                background: #141824;
                 border: 1px solid #1e2638;
                 border-radius: 8px;
             }
@@ -113,8 +114,8 @@ class AboutDialog(QDialog):
             }
         """)
         lic_layout = QVBoxLayout(lic_card)
-        lic_layout.setContentsMargins(16, 14, 16, 14)
-        lic_layout.setSpacing(8)
+        lic_layout.setContentsMargins(14, 12, 14, 12)
+        lic_layout.setSpacing(6)
 
         hdr_lbl = QLabel("LICENSE & REGISTRATION")
         hdr_lbl.setStyleSheet("color: #64748b; font-size: 8pt; font-weight: bold; letter-spacing: 0.5px;")
@@ -122,11 +123,11 @@ class AboutDialog(QDialog):
 
         key_row = QHBoxLayout()
         key_title = QLabel("Key:")
-        key_title.setStyleSheet("color: #cbd5e1; font-size: 9pt; font-weight: 600;")
+        key_title.setStyleSheet("color: #cbd5e1; font-size: 8.5pt; font-weight: 600;")
         key_row.addWidget(key_title)
 
         key_val = QLabel(serial_key)
-        key_val.setStyleSheet("color: #38bdf8; font-family: 'Cascadia Code', Consolas, monospace; font-size: 9pt; font-weight: 600;")
+        key_val.setStyleSheet("color: #38bdf8; font-family: 'Cascadia Code', Consolas, monospace; font-size: 8.5pt; font-weight: 600;")
         key_row.addWidget(key_val)
         key_row.addStretch()
 
@@ -138,9 +139,9 @@ class AboutDialog(QDialog):
                 color: #e2e8f0;
                 font-size: 8pt;
                 font-weight: 600;
-                padding: 4px 10px;
+                padding: 3px 8px;
                 border: 1px solid #2e3a50;
-                border-radius: 5px;
+                border-radius: 4px;
             }
             QPushButton:hover {
                 background: #25334a;
@@ -158,9 +159,9 @@ class AboutDialog(QDialog):
                 background: #1e2638;
                 color: #94a3b8;
                 font-size: 8pt;
-                padding: 4px 10px;
+                padding: 3px 8px;
                 border: 1px solid #2e3a50;
-                border-radius: 5px;
+                border-radius: 4px;
             }
             QPushButton:hover {
                 background: #25334a;
@@ -193,7 +194,7 @@ class AboutDialog(QDialog):
         dev_card = QFrame()
         dev_card.setStyleSheet("""
             QFrame {
-                background: #121722;
+                background: #141824;
                 border: 1px solid #1e2638;
                 border-radius: 8px;
             }
@@ -203,15 +204,15 @@ class AboutDialog(QDialog):
             }
         """)
         dev_layout = QVBoxLayout(dev_card)
-        dev_layout.setContentsMargins(16, 14, 16, 14)
-        dev_layout.setSpacing(6)
+        dev_layout.setContentsMargins(14, 12, 14, 12)
+        dev_layout.setSpacing(5)
 
         dev_title = QLabel("DEVELOPER SUPPORT")
         dev_title.setStyleSheet("color: #64748b; font-size: 8pt; font-weight: bold; letter-spacing: 0.5px;")
         dev_layout.addWidget(dev_title)
 
         org_lbl = QLabel("TN Developers Co.")
-        org_lbl.setStyleSheet("color: #f0f6fc; font-size: 9.5pt; font-weight: 600;")
+        org_lbl.setStyleSheet("color: #f0f6fc; font-size: 9pt; font-weight: 600;")
         dev_layout.addWidget(org_lbl)
 
         email_lbl = QLabel("Email:  <span style='color: #38bdf8;'>tahir.naqash4@gmail.com</span>")
@@ -227,7 +228,7 @@ class AboutDialog(QDialog):
 
         # Bottom Button Row
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(12)
+        btn_row.setSpacing(10)
 
         whats_new_btn = QPushButton("✨ What's New")
         whats_new_btn.setCursor(Qt.PointingHandCursor)
@@ -237,8 +238,8 @@ class AboutDialog(QDialog):
                 color: #60a5fa;
                 font-size: 8.5pt;
                 font-weight: 600;
-                padding: 7px 16px;
-                border-radius: 6px;
+                padding: 6px 14px;
+                border-radius: 5px;
                 border: 1px solid #1d4ed8;
             }
             QPushButton:hover {
@@ -257,8 +258,8 @@ class AboutDialog(QDialog):
                 background: #1e2638;
                 color: #e2e8f0;
                 font-size: 8.5pt;
-                padding: 7px 20px;
-                border-radius: 6px;
+                padding: 6px 18px;
+                border-radius: 5px;
                 border: 1px solid #2e3a50;
             }
             QPushButton:hover {
@@ -281,9 +282,9 @@ class AboutDialog(QDialog):
                     background: #142e23;
                     color: #34d399;
                     font-size: 8pt;
-                    padding: 4px 10px;
+                    padding: 3px 8px;
                     border: 1px solid #059669;
-                    border-radius: 5px;
+                    border-radius: 4px;
                 }
             """)
             QTimer.singleShot(2000, lambda: self._reset_copy_btn() if not self.isHidden() else None)
@@ -295,9 +296,9 @@ class AboutDialog(QDialog):
                 background: #1e2638;
                 color: #94a3b8;
                 font-size: 8pt;
-                padding: 4px 10px;
+                padding: 3px 8px;
                 border: 1px solid #2e3a50;
-                border-radius: 5px;
+                border-radius: 4px;
             }
             QPushButton:hover {
                 background: #25334a;
@@ -319,11 +320,7 @@ class AboutDialog(QDialog):
 
 class FramelessScrollArea(QScrollArea):
     """
-    Scroll area with invisible scroll bars that supports:
-    - Vertical wheel scrolling (standard mouse wheel)
-    - Horizontal wheel scrolling (Shift + Wheel, Alt + Wheel)
-    - Touchpad 2-finger horizontal swipe and mouse tilt wheel
-    - Middle-click mouse drag to pan smoothly in both directions
+    Scroll area with smooth vertical scrolling and middle-click pan.
     """
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -331,39 +328,13 @@ class FramelessScrollArea(QScrollArea):
         self.setFrameShape(QFrame.NoFrame)
         self.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._is_panning = False
         self._pan_start = None
         self._h_start = 0
         self._v_start = 0
 
     def wheelEvent(self, event):
-        # 1. Native horizontal delta (touchpad 2-finger horizontal swipe or tilt wheel)
-        dx = event.angleDelta().x()
-        pixel_dx = event.pixelDelta().x() if hasattr(event, "pixelDelta") else 0
-        if pixel_dx != 0:
-            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - pixel_dx)
-            event.accept()
-            return
-        elif dx != 0:
-            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - dx)
-            event.accept()
-            return
-
-        # 2. Shift or Alt + Mouse Wheel -> horizontal scroll
-        modifiers = event.modifiers()
-        if modifiers & (Qt.ShiftModifier | Qt.AltModifier):
-            dy = event.angleDelta().y()
-            pixel_dy = event.pixelDelta().y() if hasattr(event, "pixelDelta") else 0
-            if pixel_dy != 0:
-                self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - pixel_dy)
-                event.accept()
-                return
-            elif dy != 0:
-                self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - dy)
-                event.accept()
-                return
-
         super().wheelEvent(event)
 
     def mousePressEvent(self, event):
@@ -371,7 +342,6 @@ class FramelessScrollArea(QScrollArea):
             self._is_panning = True
             pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
             self._pan_start = pos
-            self._h_start = self.horizontalScrollBar().value()
             self._v_start = self.verticalScrollBar().value()
             self.viewport().setCursor(Qt.ClosedHandCursor)
             event.accept()
@@ -382,7 +352,6 @@ class FramelessScrollArea(QScrollArea):
         if self._is_panning and self._pan_start is not None:
             pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
             delta = pos - self._pan_start
-            self.horizontalScrollBar().setValue(self._h_start - delta.x())
             self.verticalScrollBar().setValue(self._v_start - delta.y())
             event.accept()
             return
@@ -399,24 +368,13 @@ class FramelessScrollArea(QScrollArea):
 
 
 class ScrollEventFilter(QObject):
-    """
-    Event filter installed on child widgets and panels to ensure that:
-    - Shift + Wheel (and Alt + Wheel)
-    - Touchpad horizontal swipe
-    - Middle-click drag
-    are forwarded to the outer FramelessScrollArea instead of being consumed by child widgets.
-    """
     def __init__(self, scroll_area: FramelessScrollArea):
         super().__init__(scroll_area)
         self.scroll_area = scroll_area
 
     def eventFilter(self, watched, event):
         etype = event.type()
-        if etype == QEvent.Wheel:
-            if (event.modifiers() & (Qt.ShiftModifier | Qt.AltModifier)) or event.angleDelta().x() != 0:
-                self.scroll_area.wheelEvent(event)
-                return True
-        elif etype == QEvent.MouseButtonPress and event.button() == Qt.MiddleButton:
+        if etype == QEvent.MouseButtonPress and event.button() == Qt.MiddleButton:
             self.scroll_area.mousePressEvent(event)
             return True
         elif etype == QEvent.MouseMove and getattr(self.scroll_area, '_is_panning', False):
@@ -435,9 +393,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("PITC Suite")
         self.setWindowIcon(app_icon())
-        self.setMinimumSize(560, 500)
+        self.setMinimumSize(540, 480)
         
-        # 1. Window size & geometry restoration (700 x 720 initial, or last saved)
+        # 1. Window size restoration (800 x 700 initial, or last saved)
         self._init_window_size()
 
         root = QWidget()
@@ -447,40 +405,41 @@ class MainWindow(QMainWindow):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # 2. Sleek Dark Sidebar Navigation
-        self.nav_collapsed = False
+        # 2. Sleek Activity Bar / Left Rail (Antigravity Style)
+        # Default collapsed to 52px icon rail for maximum content space at 800px width
+        self.nav_collapsed = True
         self.nav = QWidget()
         self.nav.setObjectName("navSidebar")
         self.nav.setStyleSheet("""
             QWidget#navSidebar {
-                background-color: #111620;
-                border-right: 1px solid #1e2638;
+                background-color: #12151f;
+                border-right: 1px solid #1e2433;
             }
         """)
         nav_layout = QVBoxLayout(self.nav)
-        nav_layout.setContentsMargins(0, 8, 0, 8)
-        nav_layout.setSpacing(1)
+        nav_layout.setContentsMargins(0, 6, 0, 6)
+        nav_layout.setSpacing(2)
 
-        # Sidebar Header: Toggle button & Branding
+        # Activity Bar Header: Toggle button & Branding
         nav_header = QHBoxLayout()
-        nav_header.setContentsMargins(10, 4, 10, 8)
-        nav_header.setSpacing(8)
+        nav_header.setContentsMargins(8, 2, 8, 6)
+        nav_header.setSpacing(6)
 
         self.nav_menu_btn = QPushButton("☰")
-        self.nav_menu_btn.setFixedSize(32, 32)
+        self.nav_menu_btn.setFixedSize(34, 34)
         self.nav_menu_btn.setToolTip("Toggle sidebar labels")
         self.nav_menu_btn.setCursor(Qt.PointingHandCursor)
         self.nav_menu_btn.setStyleSheet("""
             QPushButton {
-                background: #18202e;
+                background: #181d2a;
                 color: #94a3b8;
-                border: 1px solid #253043;
+                border: 1px solid #252e40;
                 border-radius: 6px;
                 font-size: 11pt;
                 padding: 0;
             }
             QPushButton:hover {
-                background: #25334a;
+                background: #222b3d;
                 border-color: #3b82f6;
                 color: #f8fafc;
             }
@@ -489,18 +448,17 @@ class MainWindow(QMainWindow):
         nav_header.addWidget(self.nav_menu_btn)
 
         self.nav_brand_lbl = QLabel("PITC Suite")
-        self.nav_brand_lbl.setStyleSheet("color: #60a5fa; font-size: 11pt; font-weight: bold; letter-spacing: 0.5px;")
+        self.nav_brand_lbl.setStyleSheet("color: #60a5fa; font-size: 10.5pt; font-weight: bold; letter-spacing: 0.5px;")
         nav_header.addWidget(self.nav_brand_lbl)
         nav_header.addStretch()
         nav_layout.addLayout(nav_header)
 
-        # Separator line under sidebar header
         sep1 = QFrame()
         sep1.setFrameShape(QFrame.HLine)
-        sep1.setStyleSheet("background-color: #1e2638; border: none; height: 1px; max-height: 1px; margin: 0 8px 6px 8px;")
+        sep1.setStyleSheet("background-color: #1e2433; border: none; height: 1px; max-height: 1px; margin: 0 6px 4px 6px;")
         nav_layout.addWidget(sep1)
 
-        # Tool buttons
+        # Tool Activity Bar Buttons
         self.nav_btns = []
         self.nav_names = []
         for i, item in enumerate(TOOLS):
@@ -508,9 +466,10 @@ class MainWindow(QMainWindow):
             icon_name = item[2]
             button = QPushButton(name)
             button.setIcon(get_icon(icon_name))
-            button.setIconSize(QSize(18, 18))
+            button.setIconSize(QSize(20, 20))
             button.setToolTip(name)
             button.setCursor(Qt.PointingHandCursor)
+            button.setFixedHeight(36)
             button.clicked.connect(lambda checked=False, idx=i: self.switch(idx))
             nav_layout.addWidget(button)
             self.nav_btns.append(button)
@@ -518,25 +477,25 @@ class MainWindow(QMainWindow):
             
         nav_layout.addStretch()
 
-        # Separator line above sidebar footer
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.HLine)
-        sep2.setStyleSheet("background-color: #1e2638; border: none; height: 1px; max-height: 1px; margin: 6px 8px;")
+        sep2.setStyleSheet("background-color: #1e2433; border: none; height: 1px; max-height: 1px; margin: 4px 6px;")
         nav_layout.addWidget(sep2)
 
-        # Update button in sidebar footer
-        self.update_btn = QPushButton("Check for Updates")
+        # Footer Buttons
+        self.update_btn = QPushButton("🔄")
         self.update_btn.setCursor(Qt.PointingHandCursor)
+        self.update_btn.setFixedHeight(32)
         self.update_btn.setStyleSheet("""
             QPushButton {
                 background: #161c28;
                 color: #94a3b8;
                 font-size: 8pt;
                 font-weight: 500;
-                padding: 6px;
+                padding: 4px;
                 border-radius: 6px;
                 border: 1px solid #232d3f;
-                margin: 2px 8px;
+                margin: 1px 6px;
             }
             QPushButton:hover {
                 background: #1e293b;
@@ -547,18 +506,18 @@ class MainWindow(QMainWindow):
         self.update_btn.clicked.connect(self._on_update_clicked)
         nav_layout.addWidget(self.update_btn)
 
-        # About button in sidebar footer
-        self.about_sidebar_btn = QPushButton("About PITC Suite")
+        self.about_sidebar_btn = QPushButton("ℹ")
         self.about_sidebar_btn.setCursor(Qt.PointingHandCursor)
+        self.about_sidebar_btn.setFixedHeight(30)
         self.about_sidebar_btn.setStyleSheet("""
             QPushButton {
                 background: transparent;
                 color: #64748b;
-                font-size: 8pt;
-                padding: 5px;
+                font-size: 8.5pt;
+                padding: 4px;
                 border: none;
                 border-radius: 5px;
-                margin: 2px 8px 4px 8px;
+                margin: 1px 6px 2px 6px;
             }
             QPushButton:hover {
                 background: #18202e;
@@ -571,34 +530,34 @@ class MainWindow(QMainWindow):
         self._apply_nav_state()
         outer.addWidget(self.nav)
 
-        # 3. Main Content Area
+        # 3. Main Content Area (Antigravity Style)
         content = QWidget()
         content.setObjectName("contentArea")
         content.setStyleSheet("""
             QWidget#contentArea {
-                background-color: #0d1117;
+                background-color: #0b0e14;
             }
         """)
         outer.addWidget(content, 1)
         
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(10)
+        self.content_layout = QVBoxLayout(content)
+        self.content_layout.setContentsMargins(14, 10, 14, 10)
+        self.content_layout.setSpacing(8)
 
-        # Modern Content Header
+        # Content Header Bar
         header_bar = QHBoxLayout()
-        header_bar.setContentsMargins(2, 2, 2, 4)
-        header_bar.setSpacing(10)
+        header_bar.setContentsMargins(2, 2, 2, 2)
+        header_bar.setSpacing(8)
 
         title_col = QVBoxLayout()
-        title_col.setSpacing(2)
+        title_col.setSpacing(1)
 
         self.header_title = QLabel("PITC Report Downloader")
-        self.header_title.setStyleSheet("color: #f8fafc; font-size: 15pt; font-weight: bold; letter-spacing: 0.3px;")
+        self.header_title.setStyleSheet("color: #f8fafc; font-size: 13pt; font-weight: bold; letter-spacing: 0.3px;")
         title_col.addWidget(self.header_title)
 
         self.header_subtitle = QLabel("Automated CDS10 reports, OTP login & filtering")
-        self.header_subtitle.setStyleSheet("color: #94a3b8; font-size: 8.5pt;")
+        self.header_subtitle.setStyleSheet("color: #94a3b8; font-size: 8pt;")
         title_col.addWidget(self.header_subtitle)
 
         header_bar.addLayout(title_col)
@@ -620,9 +579,9 @@ class MainWindow(QMainWindow):
                 background: {badge_bg};
                 color: {badge_fg};
                 border: 1px solid {badge_border};
-                border-radius: 12px;
-                padding: 4px 12px;
-                font-size: 8pt;
+                border-radius: 11px;
+                padding: 3px 10px;
+                font-size: 7.5pt;
                 font-weight: 600;
             }}
             QPushButton:hover {{
@@ -634,13 +593,12 @@ class MainWindow(QMainWindow):
         self.license_badge.clicked.connect(self._show_about_dialog)
         header_bar.addWidget(self.license_badge)
 
-        layout.addLayout(header_bar)
+        self.content_layout.addLayout(header_bar)
 
-        # Header separator
         header_sep = QFrame()
         header_sep.setFrameShape(QFrame.HLine)
         header_sep.setStyleSheet("background-color: #1e2638; border: none; height: 1px; max-height: 1px;")
-        layout.addWidget(header_sep)
+        self.content_layout.addWidget(header_sep)
 
         # 4. Stacked Tool Panels
         self.stack = QStackedWidget()
@@ -650,20 +608,32 @@ class MainWindow(QMainWindow):
             panel_class = item[1]
             panel = panel_class()
             self.panels.append(panel)
+            
+            # Clean up duplicate internal titles inside panels so header is clean
             if panel.layout():
-                panel.layout().setContentsMargins(4, 8, 4, 4)
+                panel.layout().setContentsMargins(4, 6, 4, 4)
                 panel.layout().setAlignment(Qt.AlignTop)
+                # Hide any top duplicate label / subtitle / hline inside the panel
+                for idx in range(min(4, panel.layout().count())):
+                    child_item = panel.layout().itemAt(idx)
+                    if child_item and child_item.widget():
+                        w = child_item.widget()
+                        if isinstance(w, (QLabel, QFrame)) and not isinstance(w, QGroupBox):
+                            w.hide()
+                            
             for button in panel.findChildren(QPushButton):
                 if button.property("role") is None and not button.styleSheet():
                     button.setProperty("role", "secondary")
                 button.setMinimumWidth(0)
                 button.setMaximumWidth(16777215)
+                
             for edit in panel.findChildren(QLineEdit):
                 if isinstance(edit.parentWidget(), QSpinBox):
                     continue
-                edit.setMinimumWidth(70)
+                edit.setMinimumWidth(0)
                 edit.setMaximumWidth(16777215)
                 edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                
             scroll = FramelessScrollArea()
             scroll.setWidget(panel)
             filt = ScrollEventFilter(scroll)
@@ -672,12 +642,14 @@ class MainWindow(QMainWindow):
                 child.installEventFilter(filt)
                 if isinstance(child, QAbstractScrollArea):
                     child.viewport().installEventFilter(filt)
+                    
             for area in [scroll, *panel.findChildren(QAbstractScrollArea)]:
                 area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-                area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+                area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+                
             self.stack.addWidget(scroll)
             
-        layout.addWidget(self.stack, 1)
+        self.content_layout.addWidget(self.stack, 1)
 
         self.switch(0)
 
@@ -688,7 +660,7 @@ class MainWindow(QMainWindow):
         self._check_post_update()
 
     def _init_window_size(self):
-        """Restore saved window size or initialize to 700 x 720."""
+        """Restore saved window size or initialize to 800 x 700."""
         settings = QSettings("TNDevelopers", "PITCSuite")
         saved_size = settings.value("window_size")
         saved_geom = settings.value("window_geometry")
@@ -702,7 +674,7 @@ class MainWindow(QMainWindow):
         if saved_size and isinstance(saved_size, QSize) and saved_size.isValid():
             self.resize(saved_size)
         elif not saved_geom:
-            self.resize(700, 720)
+            self.resize(800, 700)
 
     def _save_window_size(self):
         """Persist current window size and geometry so subsequent launches restore them."""
@@ -711,9 +683,30 @@ class MainWindow(QMainWindow):
             settings.setValue("window_size", self.size())
             settings.setValue("window_geometry", self.saveGeometry())
 
+    def _adapt_responsive_ui(self, width: int, height: int):
+        """Dynamically adapt fonts, margins, and layout to window adjustments (Antigravity style)."""
+        if width < 720 or height < 600:
+            self.header_title.setStyleSheet("color: #f8fafc; font-size: 11pt; font-weight: bold; letter-spacing: 0.2px;")
+            self.header_subtitle.setStyleSheet("color: #94a3b8; font-size: 7.5pt;")
+            self.content_layout.setContentsMargins(8, 6, 8, 6)
+            self.content_layout.setSpacing(6)
+            if not self.nav_collapsed and width < 680:
+                self.toggle_nav()
+        elif width < 860:
+            self.header_title.setStyleSheet("color: #f8fafc; font-size: 12.5pt; font-weight: bold; letter-spacing: 0.3px;")
+            self.header_subtitle.setStyleSheet("color: #94a3b8; font-size: 8pt;")
+            self.content_layout.setContentsMargins(12, 8, 12, 8)
+            self.content_layout.setSpacing(8)
+        else:
+            self.header_title.setStyleSheet("color: #f8fafc; font-size: 14pt; font-weight: bold; letter-spacing: 0.3px;")
+            self.header_subtitle.setStyleSheet("color: #94a3b8; font-size: 8.5pt;")
+            self.content_layout.setContentsMargins(16, 12, 16, 12)
+            self.content_layout.setSpacing(10)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._save_window_size()
+        self._adapt_responsive_ui(self.width(), self.height())
 
     def _show_about_dialog(self):
         dlg = AboutDialog(self)
@@ -753,7 +746,7 @@ class MainWindow(QMainWindow):
         self.nav_collapsed = not self.nav_collapsed
         
         # Smooth animated sidebar width transition (200ms ease-out cubic)
-        target_width = 52 if self.nav_collapsed else 220
+        target_width = 52 if self.nav_collapsed else 190
         start_width = self.nav.width()
         
         self.nav_anim_group = QParallelAnimationGroup(self)
@@ -786,21 +779,6 @@ class MainWindow(QMainWindow):
         self._latest_notes = notes
         self._download_url = download_url
         self._latest_file_size = file_size
-        self.update_btn.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #10b981, stop:1 #059669);
-                color: #ffffff;
-                font-size: 8pt;
-                font-weight: bold;
-                padding: 6px;
-                border-radius: 6px;
-                border: 1px solid #34d399;
-                margin: 2px 8px;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #34d399, stop:1 #10b981);
-            }
-        """)
         self._apply_nav_state()
 
     def _on_update_clicked(self):
@@ -825,18 +803,83 @@ class MainWindow(QMainWindow):
             settings.setValue("last_run_version", current_ver)
 
     def _apply_nav_state(self):
-        target_width = 52 if self.nav_collapsed else 220
+        target_width = 52 if self.nav_collapsed else 190
         self.nav.setFixedWidth(target_width)
         
         has_update = getattr(self, "_has_update", False)
         if self.nav_collapsed:
             self.nav_brand_lbl.hide()
-            self.update_btn.setText("!" if has_update else "🔄")
+            self.update_btn.setText("🚀" if has_update else "🔄")
             self.about_sidebar_btn.setText("ℹ")
+            if has_update:
+                self.update_btn.setStyleSheet("""
+                    QPushButton {
+                        background: #064e3b;
+                        color: #34d399;
+                        border: 1px solid #059669;
+                        border-radius: 6px;
+                        margin: 1px 6px;
+                        font-size: 10pt;
+                    }
+                    QPushButton:hover {
+                        background: #059669;
+                        color: #ffffff;
+                    }
+                """)
+            else:
+                self.update_btn.setStyleSheet("""
+                    QPushButton {
+                        background: #161c28;
+                        color: #94a3b8;
+                        font-size: 8.5pt;
+                        border-radius: 6px;
+                        border: 1px solid #232d3f;
+                        margin: 1px 6px;
+                    }
+                    QPushButton:hover {
+                        background: #1e293b;
+                        color: #ffffff;
+                        border-color: #3b82f6;
+                    }
+                """)
         else:
             self.nav_brand_lbl.show()
             self.update_btn.setText("Update Available!" if has_update else "Check for Updates")
             self.about_sidebar_btn.setText("About PITC Suite")
+            if has_update:
+                self.update_btn.setStyleSheet("""
+                    QPushButton {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #10b981, stop:1 #059669);
+                        color: #ffffff;
+                        font-size: 7.5pt;
+                        font-weight: bold;
+                        padding: 6px;
+                        border-radius: 6px;
+                        border: 1px solid #34d399;
+                        margin: 1px 6px;
+                    }
+                    QPushButton:hover {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #34d399, stop:1 #10b981);
+                    }
+                """)
+            else:
+                self.update_btn.setStyleSheet("""
+                    QPushButton {
+                        background: #161c28;
+                        color: #94a3b8;
+                        font-size: 7.5pt;
+                        font-weight: 500;
+                        padding: 6px;
+                        border-radius: 6px;
+                        border: 1px solid #232d3f;
+                        margin: 1px 6px;
+                    }
+                    QPushButton:hover {
+                        background: #1e293b;
+                        color: #ffffff;
+                        border-color: #3b82f6;
+                    }
+                """)
             
         self.update_btn.setToolTip("Check for Updates")
         self.about_sidebar_btn.setToolTip("About PITC Suite")
@@ -850,10 +893,7 @@ class MainWindow(QMainWindow):
                 button.setStyleSheet(NAV_STYLE)
 
     def closeEvent(self, event):
-        # Save window size and geometry before closing
         self._save_window_size()
-        
-        # Gracefully attempt to stop any background workers and drivers
         for panel in self.panels:
             for method in ['cancel', 'halt', 'stop', '_stop']:
                 if hasattr(panel, method):

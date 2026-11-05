@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QMessageBox, QComboBox,
     QSpinBox
 )
-from PySide6.QtCore import Signal, QObject, QThread, QSettings
+from PySide6.QtCore import Signal, QObject, QThread, QSettings, Qt
 
 from pitcsuite.ui_helpers import lbl, hline, START_BTN, STOP_BTN, notify
 from pitcsuite.templates import download_template
@@ -1059,28 +1059,56 @@ class PITCPanel(QWidget):
         self.worker = None
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
-
-        layout.addWidget(lbl("PITC Downloader", bold=True, color="#7eb8f7"))
-        layout.addWidget(lbl("OTP login  ·  All report types  ·  Month & Amount filter  ·  Highlight  ·  Sr. No. Stamp", color="#556"))
-        layout.addWidget(hline())
+        layout.setContentsMargins(4, 4, 4, 4)
 
         # ── Excel + Template ──
         g1 = QGroupBox("Excel File")
-        g1v = QVBoxLayout(g1)
-        r_ex = QHBoxLayout()
+        g1v = QHBoxLayout(g1)
+        g1v.setSpacing(8)
         self.excel_ed = QLineEdit()
         self.excel_ed.setPlaceholderText("Select Excel file (*.xlsx)...")
         self.excel_ed.setReadOnly(True)
-        self.excel_ed.setProperty("preferred_width", 245)
-        b1 = QPushButton("Browse"); b1.clicked.connect(self.pick_excel)
-        btn_tpl = QPushButton("⬇  Download Template")
-        btn_tpl.setStyleSheet("background:#194; border:none; border-radius:4px; padding:5px 10px; color:#fff;")
+        b1 = QPushButton("Browse")
+        b1.setCursor(Qt.PointingHandCursor)
+        b1.clicked.connect(self.pick_excel)
+        btn_tpl = QPushButton("⬇ Template")
+        btn_tpl.setCursor(Qt.PointingHandCursor)
+        btn_tpl.setStyleSheet("""
+            QPushButton {
+                background: #142820;
+                color: #34d399;
+                border: 1px solid #059669;
+                border-radius: 6px;
+                padding: 5px 12px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #059669;
+                color: #ffffff;
+            }
+        """)
         btn_tpl.clicked.connect(self.get_template)
-        r_ex.addWidget(self.excel_ed); r_ex.addWidget(b1); r_ex.addWidget(btn_tpl)
-        g1v.addLayout(r_ex)
+        g1v.addWidget(self.excel_ed, 1)
+        g1v.addWidget(b1)
+        g1v.addWidget(btn_tpl)
         layout.addWidget(g1)
 
-        # ── DISCO ──
+        # ── Paths & Environment ──
+        g2 = QGroupBox("Paths & Environment")
+        g2v = QGridLayout(g2)
+        g2v.setHorizontalSpacing(10)
+        g2v.setVerticalSpacing(8)
+        lbl_dl = QLabel("Download Dir:")
+        self.dl_ed = QLineEdit(r"D:\PITC_PDFs")
+        g2v.addWidget(lbl_dl, 0, 0)
+        g2v.addWidget(self.dl_ed, 0, 1)
+        lbl_pr = QLabel("Chrome Profile:")
+        self.pr_ed = QLineEdit(r"C:\ChromeProfiles\PITC")
+        g2v.addWidget(lbl_pr, 1, 0)
+        g2v.addWidget(self.pr_ed, 1, 1)
+        layout.addWidget(g2)
+
+        # ── DISCO & Report Type Row ──
         g_disco = QGroupBox("Select DISCO")
         g_disco_h = QHBoxLayout(g_disco)
         self.disco_cb = QComboBox()
@@ -1089,7 +1117,6 @@ class PITCPanel(QWidget):
         self.disco_cb.currentTextChanged.connect(self._on_disco_changed)
         g_disco_h.addWidget(self.disco_cb)
 
-        # ── Report Type ──
         g_rep = QGroupBox("Report Type")
         g_rep_h = QHBoxLayout(g_rep)
         self.report_cb = QComboBox()
@@ -1097,26 +1124,15 @@ class PITCPanel(QWidget):
         default_idx = self.REPORT_LABELS.index("Billing Adjustment") if "Billing Adjustment" in self.REPORT_LABELS else 2
         self.report_cb.setCurrentIndex(default_idx)
         self.report_cb.currentTextChanged.connect(self._on_report_type_changed)
-        g_rep_h.addWidget(self.report_cb); g_rep_h.addStretch()
+        g_rep_h.addWidget(self.report_cb)
 
-        # -- Optional page range --
-        g_pages = QGroupBox("Optional Page Range")
-        g_pages_h = QGridLayout(g_pages)
-        g_pages_h.setHorizontalSpacing(8)
-        g_pages_h.setVerticalSpacing(6)
-        g_pages_h.addWidget(QLabel("From:"), 0, 0)
-        self.page_from_ed = QLineEdit()
-        self.page_from_ed.setPlaceholderText("e.g. 2")
-        self.page_from_ed.setProperty("preferred_width", 90)
-        g_pages_h.addWidget(self.page_from_ed, 0, 1)
-        g_pages_h.addWidget(QLabel("To:"), 0, 2)
-        self.page_to_ed = QLineEdit()
-        self.page_to_ed.setPlaceholderText("e.g. 4")
-        self.page_to_ed.setProperty("preferred_width", 90)
-        g_pages_h.addWidget(self.page_to_ed, 0, 3)
-        g_pages_h.setColumnStretch(1, 1)
-        g_pages_h.setColumnStretch(3, 1)
-        # -- Match selection --
+        row_cfg1 = QHBoxLayout()
+        row_cfg1.setSpacing(10)
+        row_cfg1.addWidget(g_disco, 1)
+        row_cfg1.addWidget(g_rep, 2)
+        layout.addLayout(row_cfg1)
+
+        # ── Matching Pages & Page Range Row ──
         g_match = QGroupBox("Matching Pages")
         g_match_h = QHBoxLayout(g_match)
         g_match_h.addWidget(QLabel("Download:"))
@@ -1126,57 +1142,82 @@ class PITCPanel(QWidget):
         self.match_cb.addItem("All matching pages", "all")
         self.match_cb.setToolTip("Controls which pages are kept when month/amount matches multiple pages.")
         g_match_h.addWidget(self.match_cb)
-        g_match_h.addStretch()
-        report_match_row = QHBoxLayout()
-        report_match_row.setSpacing(8)
-        report_match_row.addWidget(g_disco, 1)
-        report_match_row.addWidget(g_rep, 2)
-        report_match_row.addWidget(g_match, 2)
-        layout.addLayout(report_match_row)
 
-        # Page range and print timing share the same row.
-        options_row = QHBoxLayout()
-        options_row.setSpacing(8)
-        options_row.addWidget(g_pages, 1)
-        layout.addLayout(options_row)
+        g_pages = QGroupBox("Optional Page Range")
+        g_pages_h = QGridLayout(g_pages)
+        g_pages_h.setHorizontalSpacing(8)
+        g_pages_h.setVerticalSpacing(6)
+        g_pages_h.addWidget(QLabel("From:"), 0, 0)
+        self.page_from_ed = QLineEdit()
+        self.page_from_ed.setPlaceholderText("e.g. 2")
+        g_pages_h.addWidget(self.page_from_ed, 0, 1)
+        g_pages_h.addWidget(QLabel("To:"), 0, 2)
+        self.page_to_ed = QLineEdit()
+        self.page_to_ed.setPlaceholderText("e.g. 4")
+        g_pages_h.addWidget(self.page_to_ed, 0, 3)
+        g_pages_h.setColumnStretch(1, 1)
+        g_pages_h.setColumnStretch(3, 1)
 
-        # ── Paths ──
-        g2 = QGroupBox("Paths")
-        g2v = QHBoxLayout(g2)
-        lbl_dl = QLabel("Download Dir:"); lbl_dl.setFixedWidth(82); g2v.addWidget(lbl_dl)
-        self.dl_ed = QLineEdit(r"D:\PITC_PDFs"); self.dl_ed.setProperty("preferred_width", 245); g2v.addWidget(self.dl_ed, 1)
-        lbl_pr = QLabel("Chrome Profile:"); lbl_pr.setFixedWidth(92); g2v.addWidget(lbl_pr)
-        self.pr_ed = QLineEdit(r"C:\ChromeProfiles\PITC"); self.pr_ed.setProperty("preferred_width", 245); g2v.addWidget(self.pr_ed, 1)
-        layout.insertWidget(4, g2)
+        row_cfg2 = QHBoxLayout()
+        row_cfg2.setSpacing(10)
+        row_cfg2.addWidget(g_match, 1)
+        row_cfg2.addWidget(g_pages, 1)
+        layout.addLayout(row_cfg2)
 
-        # ── Timing & Print ──
-        g3 = QGroupBox("Timing & Print Dialog")
+        # ── Timing & Print Settings ──
+        g3 = QGroupBox("Timing & Print Settings")
         g3h = QGridLayout(g3)
-        g3h.setHorizontalSpacing(8)
-        g3h.setVerticalSpacing(6)
+        g3h.setHorizontalSpacing(10)
+        g3h.setVerticalSpacing(8)
 
         def spin(val, mn=1, mx=9999):
-            s = QSpinBox(); s.setRange(mn, mx); s.setValue(val); return s
+            s = QSpinBox()
+            s.setRange(mn, mx)
+            s.setValue(val)
+            return s
 
-        g3h.addWidget(QLabel("Restart"), 0, 0);        self.sp_restart = spin(35, 1, 200); g3h.addWidget(self.sp_restart, 0, 1)
-        g3h.addWidget(QLabel("Warmup"), 0, 2);         self.sp_warmup  = spin(0, 0, 200);  g3h.addWidget(self.sp_warmup, 0, 3)
-        g3h.addWidget(QLabel("Print Wait (s)"), 1, 0); self.sp_pwait   = spin(6,  1, 200); g3h.addWidget(self.sp_pwait, 1, 1)
-        g3h.addWidget(QLabel("Print X"), 2, 0);        self.sp_px      = spin(30);         g3h.addWidget(self.sp_px, 2, 1)
-        g3h.addWidget(QLabel("Print Y"), 2, 2);        self.sp_py      = spin(165);        g3h.addWidget(self.sp_py, 2, 3)
-        g3h.setColumnStretch(1, 1)
-        g3h.setColumnStretch(3, 1)
-        options_row.addWidget(g3, 1)
+        g3h.addWidget(QLabel("Restart:"), 0, 0)
+        self.sp_restart = spin(35, 1, 200)
+        g3h.addWidget(self.sp_restart, 0, 1)
 
-        # ── Buttons ──
+        g3h.addWidget(QLabel("Warmup:"), 0, 2)
+        self.sp_warmup = spin(0, 0, 200)
+        g3h.addWidget(self.sp_warmup, 0, 3)
+
+        g3h.addWidget(QLabel("Print Wait (s):"), 1, 0)
+        self.sp_pwait = spin(6, 1, 200)
+        g3h.addWidget(self.sp_pwait, 1, 1)
+
+        g3h.addWidget(QLabel("Print X:"), 1, 2)
+        self.sp_px = spin(30)
+        g3h.addWidget(self.sp_px, 1, 3)
+
+        g3h.addWidget(QLabel("Print Y:"), 1, 4)
+        self.sp_py = spin(165)
+        g3h.addWidget(self.sp_py, 1, 5)
+
+        layout.addWidget(g3)
+
+        # ── Action Buttons ──
         bh = QHBoxLayout()
-        self.btn_start = QPushButton("▶  START"); self.btn_start.setStyleSheet(START_BTN)
-        self.btn_stop  = QPushButton("■  STOP");  self.btn_stop.setStyleSheet(STOP_BTN); self.btn_stop.setEnabled(False)
-        self.btn_start.clicked.connect(self.run); self.btn_stop.clicked.connect(self.halt)
-        bh.addWidget(self.btn_start); bh.addWidget(self.btn_stop); bh.addStretch()
+        self.btn_start = QPushButton("▶  START")
+        self.btn_start.setStyleSheet(START_BTN)
+        self.btn_stop = QPushButton("■  STOP")
+        self.btn_stop.setStyleSheet(STOP_BTN)
+        self.btn_stop.setEnabled(False)
+        self.btn_start.clicked.connect(self.run)
+        self.btn_stop.clicked.connect(self.halt)
+        bh.addWidget(self.btn_start)
+        bh.addWidget(self.btn_stop)
+        bh.addStretch()
         layout.addLayout(bh)
 
-        self.progress = QProgressBar(); layout.addWidget(self.progress)
-        self.log_box = QTextEdit(); self.log_box.setReadOnly(True)
+        self.progress = QProgressBar()
+        layout.addWidget(self.progress)
+
+        self.log_box = QTextEdit()
+        self.log_box.setReadOnly(True)
+        self.log_box.setMinimumHeight(90)
         layout.addWidget(self.log_box)
 
         # Load saved settings
