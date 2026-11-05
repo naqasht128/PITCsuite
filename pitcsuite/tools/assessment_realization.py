@@ -19,7 +19,7 @@ from openpyxl.utils import get_column_letter
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QLineEdit,
     QListWidget, QGroupBox, QComboBox, QCheckBox, QTextEdit, QProgressBar,
     QFileDialog, QMessageBox, QFrame
 )
@@ -637,28 +637,29 @@ class AssessmentRealizationPanel(QWidget):
         layout.addWidget(group)
 
         # Actions Row
-        actions = QHBoxLayout()
+        actions = QGridLayout()
+        actions.setHorizontalSpacing(8)
+        actions.setVerticalSpacing(6)
         self.start_btn = QPushButton("▶  START EXTRACTION")
         self.start_btn.setStyleSheet(START_BTN)
         self.start_btn.clicked.connect(self._start)
-        actions.addWidget(self.start_btn)
+        actions.addWidget(self.start_btn, 0, 0)
 
         self.stop_btn = QPushButton("■  STOP")
         self.stop_btn.setStyleSheet(STOP_BTN)
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self._stop)
-        actions.addWidget(self.stop_btn)
+        actions.addWidget(self.stop_btn, 0, 1)
 
         self.open_excel_btn = QPushButton("📊 Open Excel")
         self.open_excel_btn.setEnabled(False)
         self.open_excel_btn.clicked.connect(self._open_excel)
-        actions.addWidget(self.open_excel_btn)
+        actions.addWidget(self.open_excel_btn, 1, 0)
 
         self.open_folder_btn = QPushButton("📂 Open Folder")
         self.open_folder_btn.setEnabled(False)
         self.open_folder_btn.clicked.connect(self._open_folder)
-        actions.addWidget(self.open_folder_btn)
-        actions.addStretch()
+        actions.addWidget(self.open_folder_btn, 1, 1)
         layout.addLayout(actions)
 
         # Status & Progress

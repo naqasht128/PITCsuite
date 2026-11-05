@@ -18,7 +18,7 @@ from openpyxl.utils import get_column_letter
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QLineEdit,
     QListWidget, QGroupBox, QComboBox, QCheckBox, QTextEdit,
     QFileDialog, QMessageBox, QFrame
 )
@@ -1146,24 +1146,25 @@ class CP139PostingCheckerPanel(QWidget):
         self.file_list.setMinimumHeight(55)
         form_in.addWidget(self.file_list)
 
-        btn_row = QHBoxLayout()
+        btn_grid = QGridLayout()
+        btn_grid.setHorizontalSpacing(8)
+        btn_grid.setVerticalSpacing(6)
         add_files_btn = QPushButton("📄 Add File(s)")
         add_files_btn.clicked.connect(self._add_files)
-        btn_row.addWidget(add_files_btn)
+        btn_grid.addWidget(add_files_btn, 0, 0)
 
         add_dir_btn = QPushButton("📁 Add Folder")
         add_dir_btn.clicked.connect(self._add_folder)
-        btn_row.addWidget(add_dir_btn)
+        btn_grid.addWidget(add_dir_btn, 0, 1)
 
         remove_btn = QPushButton("✖ Remove Selected")
         remove_btn.clicked.connect(self._remove_selected)
-        btn_row.addWidget(remove_btn)
+        btn_grid.addWidget(remove_btn, 1, 0)
 
         clear_btn = QPushButton("🗑 Clear All")
         clear_btn.clicked.connect(self._clear_files)
-        btn_row.addWidget(clear_btn)
-        btn_row.addStretch()
-        form_in.addLayout(btn_row)
+        btn_grid.addWidget(clear_btn, 1, 1)
+        form_in.addLayout(btn_grid)
         layout.addWidget(group_in)
 
         # Section 2: Output Settings Group
@@ -1205,7 +1206,7 @@ class CP139PostingCheckerPanel(QWidget):
         self.status_filter_cb.addItem("Not Pos Only", "not_pos")
         filter_row.addWidget(self.status_filter_cb)
 
-        self.file_chk = QCheckBox("Include Source File")
+        self.file_chk = QCheckBox("Include source file")
         filter_row.addWidget(self.file_chk)
         filter_row.addStretch()
         form_out.addLayout(filter_row)
@@ -1215,48 +1216,52 @@ class CP139PostingCheckerPanel(QWidget):
         group_pdf = QGroupBox("PDF Generation")
         form_pdf = QVBoxLayout(group_pdf)
 
-        chk_row = QHBoxLayout()
+        chk_grid = QGridLayout()
+        chk_grid.setHorizontalSpacing(10)
+        chk_grid.setVerticalSpacing(6)
         self.make_pdf_chk = QCheckBox("Make PDFs")
         self.make_pdf_chk.setChecked(False)
         self.make_pdf_chk.toggled.connect(self._on_make_pdf_toggled)
-        chk_row.addWidget(self.make_pdf_chk)
+        chk_grid.addWidget(self.make_pdf_chk, 0, 0)
 
         self.single_pdf_chk = QCheckBox("Single PDF")
         self.single_pdf_chk.setChecked(True)
         self.single_pdf_chk.setEnabled(False)
         self.single_pdf_chk.toggled.connect(self._on_single_pdf_toggled)
-        chk_row.addWidget(self.single_pdf_chk)
+        chk_grid.addWidget(self.single_pdf_chk, 0, 1)
 
         self.separate_pdf_chk = QCheckBox("Separate PDFs")
         self.separate_pdf_chk.setChecked(False)
         self.separate_pdf_chk.setEnabled(False)
         self.separate_pdf_chk.toggled.connect(self._on_separate_pdf_toggled)
-        chk_row.addWidget(self.separate_pdf_chk)
+        chk_grid.addWidget(self.separate_pdf_chk, 1, 0)
 
-        self.stamp_para_chk = QCheckBox("Sr. No. Stamped")
+        self.stamp_para_chk = QCheckBox("Stamp Sr. No.")
         self.stamp_para_chk.setChecked(True)
         self.stamp_para_chk.setEnabled(False)
-        chk_row.addWidget(self.stamp_para_chk)
-        chk_row.addStretch()
-        form_pdf.addLayout(chk_row)
+        chk_grid.addWidget(self.stamp_para_chk, 1, 1)
+        form_pdf.addLayout(chk_grid)
 
-        excel_row = QHBoxLayout()
-        excel_row.addWidget(QLabel("Excel input (.xlsx):"))
+        excel_grid = QGridLayout()
+        excel_grid.setHorizontalSpacing(8)
+        excel_grid.setVerticalSpacing(6)
+        excel_grid.addWidget(QLabel("Excel input (.xlsx):"), 0, 0)
         self.excel_in_ed = QLineEdit()
         self.excel_in_ed.setPlaceholderText("Select Excel workbook containing Col A: AC No., Col B: Sr. No.")
         self.excel_in_ed.setEnabled(False)
-        excel_row.addWidget(self.excel_in_ed, 1)
+        excel_grid.addWidget(self.excel_in_ed, 0, 1)
 
         self.browse_excel_btn = QPushButton("📄 Browse Excel...")
         self.browse_excel_btn.setEnabled(False)
         self.browse_excel_btn.clicked.connect(self._browse_excel)
-        excel_row.addWidget(self.browse_excel_btn)
+        excel_grid.addWidget(self.browse_excel_btn, 0, 2)
 
-        self.download_tmpl_btn = QPushButton("📥 Download Template")
+        self.download_tmpl_btn = QPushButton("📥 Template")
         self.download_tmpl_btn.setEnabled(False)
         self.download_tmpl_btn.clicked.connect(self._download_template)
-        excel_row.addWidget(self.download_tmpl_btn)
-        form_pdf.addLayout(excel_row)
+        excel_grid.addWidget(self.download_tmpl_btn, 0, 3)
+        excel_grid.setColumnStretch(1, 1)
+        form_pdf.addLayout(excel_grid)
 
         layout.addWidget(group_pdf)
 

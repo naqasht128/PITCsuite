@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton,
     QLineEdit, QFileDialog, QCheckBox, QTextEdit, QProgressBar,
     QVBoxLayout, QHBoxLayout, QGroupBox, QMessageBox, QComboBox,
-    QSpinBox
+    QSpinBox, QGridLayout
 )
 from PySide6.QtCore import Signal, QObject, QThread, QSettings
 
@@ -53,16 +53,21 @@ class BillSoftPanel(QWidget):
         layout.addWidget(g)
 
         og = QGroupBox("Options")
-        oh = QHBoxLayout(og)
+        oh = QGridLayout(og)
+        oh.setHorizontalSpacing(10)
+        oh.setVerticalSpacing(6)
         self.chk_sr       = QCheckBox("Add Sr. No. on Bill")
         self.chk_sep      = QCheckBox("Separate PDFs")
         self.chk_headless = QCheckBox("Headless (background)"); self.chk_headless.setChecked(True)
-        oh.addWidget(self.chk_sr); oh.addWidget(self.chk_sep); oh.addWidget(self.chk_headless); oh.addStretch()
+        oh.addWidget(self.chk_sr, 0, 0)
+        oh.addWidget(self.chk_sep, 0, 1)
+        oh.addWidget(self.chk_headless, 1, 0, 1, 2)
         layout.addWidget(og)
 
         bh = QHBoxLayout()
         self.btn_start = QPushButton("▶  START"); self.btn_start.setStyleSheet(START_BTN)
-        self.btn_pause = QPushButton("⏸  PAUSE"); self.btn_pause.setStyleSheet("background:#a80; border:none; border-radius:4px; padding:6px 14px; color:#fff;")
+        self.btn_pause = QPushButton("⏸  PAUSE")
+        self.btn_pause.setProperty("role", "secondary")
         self.btn_start.clicked.connect(self.start_stop); self.btn_pause.clicked.connect(self.pause_resume)
         bh.addWidget(self.btn_start); bh.addWidget(self.btn_pause); bh.addStretch()
         layout.addLayout(bh)

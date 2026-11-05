@@ -1167,8 +1167,8 @@ class PITCPanel(QWidget):
         # ── Timing & Print Settings ──
         g3 = QGroupBox("Timing & Print Settings")
         g3h = QGridLayout(g3)
-        g3h.setHorizontalSpacing(10)
-        g3h.setVerticalSpacing(8)
+        g3h.setHorizontalSpacing(8)
+        g3h.setVerticalSpacing(6)
 
         def spin(val, mn=1, mx=9999):
             s = QSpinBox()
@@ -1184,7 +1184,7 @@ class PITCPanel(QWidget):
         self.sp_warmup = spin(0, 0, 200)
         g3h.addWidget(self.sp_warmup, 0, 3)
 
-        g3h.addWidget(QLabel("Print Wait (s):"), 1, 0)
+        g3h.addWidget(QLabel("Wait (s):"), 1, 0)
         self.sp_pwait = spin(6, 1, 200)
         g3h.addWidget(self.sp_pwait, 1, 1)
 
@@ -1192,9 +1192,9 @@ class PITCPanel(QWidget):
         self.sp_px = spin(30)
         g3h.addWidget(self.sp_px, 1, 3)
 
-        g3h.addWidget(QLabel("Print Y:"), 1, 4)
+        g3h.addWidget(QLabel("Print Y:"), 2, 0)
         self.sp_py = spin(165)
-        g3h.addWidget(self.sp_py, 1, 5)
+        g3h.addWidget(self.sp_py, 2, 1)
 
         layout.addWidget(g3)
 
