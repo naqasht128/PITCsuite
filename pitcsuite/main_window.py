@@ -4,10 +4,13 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QStackedWidget, QFrame, QLineEdit, QSpinBox, QSizePolicy, QScrollArea,
-    QAbstractScrollArea, QBoxLayout, QDialog, QApplication
+    QAbstractScrollArea, QDialog, QApplication, QGraphicsOpacityEffect
 )
-from PySide6.QtCore import Qt, QSize, QTimer, QSettings, QEvent, QObject
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import (
+    Qt, QSize, QTimer, QSettings, QEvent, QObject, QPropertyAnimation,
+    QEasingCurve, QParallelAnimationGroup, QAbstractAnimation, QByteArray
+)
+from PySide6.QtGui import QPixmap, QIcon
 
 from pitcsuite.icons import app_icon, pdf_merger_icon, get_icon
 from pitcsuite.ui_helpers import NAV_STYLE
@@ -34,20 +37,20 @@ from pitcsuite.tools.integrated_tools import (
 
 
 TOOLS = [
-    ("PITC Report Downloader",        PITCPanel, "pitc_down"),
-    ("E/Bills Downloader",            BillSoftPanel, "ebills"),
-    ("Bill Scrapper",                  BillScraperPanel, "bill_scrap"),
-    ("Payment Extractor from 88L",    PaymentExtract88LPanel, "payment_ext"),
-    ("CP 52 Posting to PDF",          CP52PostingCheckerPanel, "cp52"),
-    ("CP 136 & 137 Posting Checker",   CP136PostingCheckerPanel, "cp136"),
-    ("CP 139 Posting Check/PDF",      CP139PostingCheckerPanel, "cp139"),
-    ("CP 22T Posting Checker",        CP22TCheckerPanel, "cp22t"),
-    ("CP21c Converter",               CP21cConverterPanel, "cp21c"),
-    ("Govt Assessment Realization",   AssessmentRealizationPanel, "assessment_realization"),
-    ("PDF Merger",                    PDFMerger, "pdf_merger"),
-    ("File Mover",                     FileMoverPanel, "file_mover"),
-    ("File Renamer",                    FileRenamerPanel, "file_renamer"),
-    ("Settings",                     SettingsPanel, "settings"),
+    ("PITC Report Downloader",        PITCPanel, "pitc_down", "Automated CDS10 reports, OTP login & filtering"),
+    ("E/Bills Downloader",            BillSoftPanel, "ebills", "Batch download consumer electricity bills"),
+    ("Bill Scrapper",                  BillScraperPanel, "bill_scrap", "Automated web scraper for bill data extraction"),
+    ("Payment Extractor from 88L",    PaymentExtract88LPanel, "payment_ext", "Extract and parse payment data from 88L reports"),
+    ("CP 52 Posting to PDF",          CP52PostingCheckerPanel, "cp52", "Process CP 52 posting records and generate PDF"),
+    ("CP 136 & 137 Posting Checker",   CP136PostingCheckerPanel, "cp136", "Audit and verify CP 136 / 137 posting records"),
+    ("CP 139 Posting Check/PDF",      CP139PostingCheckerPanel, "cp139", "Verify CP 139 records & generate PDF reports"),
+    ("CP 22T Posting Checker",        CP22TCheckerPanel, "cp22t", "Posting verification and reconciliation"),
+    ("CP21c Converter",               CP21cConverterPanel, "cp21c", "Convert and format CP21c records"),
+    ("Govt Assessment Realization",   AssessmentRealizationPanel, "assessment_realization", "Extract government assessment & realization data"),
+    ("PDF Merger",                    PDFMerger, "pdf_merger", "Merge, split, and stamp PDF documents"),
+    ("File Mover",                     FileMoverPanel, "file_mover", "Organize and move files by batch pattern"),
+    ("File Renamer",                    FileRenamerPanel, "file_renamer", "Batch rename files with custom rules"),
+    ("Settings",                     SettingsPanel, "settings", "DISCO configuration & login credentials"),
 ]
 
 
@@ -56,29 +59,40 @@ class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("About PITC Suite")
-        self.setFixedSize(480, 480)
+        self.setFixedSize(500, 500)
         self.setModal(True)
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
 
         self.setStyleSheet("""
             QDialog {
-                background: #1e1e1e;
-                color: #edf0f5;
+                background: #0d1117;
+                color: #f0f6fc;
+                font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
             }
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(22, 18, 22, 18)
-        layout.setSpacing(10)
+        layout.setContentsMargins(24, 22, 24, 20)
+        layout.setSpacing(12)
 
         # App Header
+        header_row = QHBoxLayout()
+        header_row.setSpacing(10)
+        
+        title_vbox = QVBoxLayout()
+        title_vbox.setSpacing(2)
+        
         title_lbl = QLabel("PITC Suite")
-        title_lbl.setStyleSheet("color: #7eb8f7; font-size: 15pt; font-weight: bold;")
-        layout.addWidget(title_lbl)
+        title_lbl.setStyleSheet("color: #60a5fa; font-size: 16pt; font-weight: bold; letter-spacing: 0.5px;")
+        title_vbox.addWidget(title_lbl)
 
-        ver_lbl = QLabel(f"Version {get_current_version()}")
-        ver_lbl.setStyleSheet("color: #9ba8ba; font-size: 9pt;")
-        layout.addWidget(ver_lbl)
+        ver_lbl = QLabel(f"Version {get_current_version()} · Windows Edition")
+        ver_lbl.setStyleSheet("color: #94a3b8; font-size: 8.5pt;")
+        title_vbox.addWidget(ver_lbl)
+        
+        header_row.addLayout(title_vbox)
+        header_row.addStretch()
+        layout.addLayout(header_row)
 
         # 1. License Information Card
         lic = getattr(parent, "active_license", None) or load_local_license()
@@ -89,9 +103,9 @@ class AboutDialog(QDialog):
         lic_card = QFrame()
         lic_card.setStyleSheet("""
             QFrame {
-                background: #252526;
-                border: 1px solid #3c3c3c;
-                border-radius: 6px;
+                background: #121722;
+                border: 1px solid #1e2638;
+                border-radius: 8px;
             }
             QLabel {
                 border: none;
@@ -99,37 +113,39 @@ class AboutDialog(QDialog):
             }
         """)
         lic_layout = QVBoxLayout(lic_card)
-        lic_layout.setContentsMargins(14, 12, 14, 12)
-        lic_layout.setSpacing(6)
+        lic_layout.setContentsMargins(16, 14, 16, 14)
+        lic_layout.setSpacing(8)
 
-        hdr_lbl = QLabel("LICENSE INFORMATION")
-        hdr_lbl.setStyleSheet("color: #858585; font-size: 8pt; font-weight: bold;")
+        hdr_lbl = QLabel("LICENSE & REGISTRATION")
+        hdr_lbl.setStyleSheet("color: #64748b; font-size: 8pt; font-weight: bold; letter-spacing: 0.5px;")
         lic_layout.addWidget(hdr_lbl)
 
         key_row = QHBoxLayout()
-        key_title = QLabel("Key: ")
-        key_title.setStyleSheet("color: #ffffff; font-size: 9pt; font-weight: bold;")
+        key_title = QLabel("Key:")
+        key_title.setStyleSheet("color: #cbd5e1; font-size: 9pt; font-weight: 600;")
         key_row.addWidget(key_title)
 
         key_val = QLabel(serial_key)
-        key_val.setStyleSheet("color: #4ec9b0; font-family: Consolas, monospace; font-size: 9.5pt; font-weight: bold;")
+        key_val.setStyleSheet("color: #38bdf8; font-family: 'Cascadia Code', Consolas, monospace; font-size: 9pt; font-weight: 600;")
         key_row.addWidget(key_val)
         key_row.addStretch()
 
-        self.change_key_btn = QPushButton("🔑 Change Key")
+        self.change_key_btn = QPushButton("🔑 Change")
         self.change_key_btn.setCursor(Qt.PointingHandCursor)
         self.change_key_btn.setStyleSheet("""
             QPushButton {
-                background: #2d2d2d;
-                color: #ffffff;
+                background: #1e2638;
+                color: #e2e8f0;
                 font-size: 8pt;
-                font-weight: bold;
-                padding: 4px 8px;
-                border: 1px solid #3c3c3c;
-                border-radius: 4px;
+                font-weight: 600;
+                padding: 4px 10px;
+                border: 1px solid #2e3a50;
+                border-radius: 5px;
             }
             QPushButton:hover {
-                background: #37373d;
+                background: #25334a;
+                border-color: #3b82f6;
+                color: #ffffff;
             }
         """)
         self.change_key_btn.clicked.connect(self._change_serial_key)
@@ -139,15 +155,15 @@ class AboutDialog(QDialog):
         self.copy_key_btn.setCursor(Qt.PointingHandCursor)
         self.copy_key_btn.setStyleSheet("""
             QPushButton {
-                background: #2d2d2d;
-                color: #cccccc;
+                background: #1e2638;
+                color: #94a3b8;
                 font-size: 8pt;
-                padding: 4px 8px;
-                border: 1px solid #3c3c3c;
-                border-radius: 4px;
+                padding: 4px 10px;
+                border: 1px solid #2e3a50;
+                border-radius: 5px;
             }
             QPushButton:hover {
-                background: #37373d;
+                background: #25334a;
                 color: #ffffff;
             }
         """)
@@ -155,18 +171,21 @@ class AboutDialog(QDialog):
         key_row.addWidget(self.copy_key_btn)
         lic_layout.addLayout(key_row)
 
-        hw_lbl = QLabel(f"Hardware ID: {get_device_id()}")
-        hw_lbl.setStyleSheet("color: #858585; font-family: Consolas, monospace; font-size: 8pt;")
+        hw_lbl = QLabel(f"Hardware ID:  {get_device_id()}")
+        hw_lbl.setStyleSheet("color: #64748b; font-family: 'Cascadia Code', Consolas, monospace; font-size: 8pt;")
         lic_layout.addWidget(hw_lbl)
 
-        plan_lbl = QLabel(f"Plan: {plan_str}")
-        plan_lbl.setStyleSheet("color: #cccccc; font-size: 9pt;")
-        lic_layout.addWidget(plan_lbl)
+        info_row = QHBoxLayout()
+        plan_lbl = QLabel(f"Plan: <b style='color:#f0f6fc;'>{plan_str}</b>")
+        plan_lbl.setStyleSheet("color: #94a3b8; font-size: 8.5pt;")
+        info_row.addWidget(plan_lbl)
+        info_row.addStretch()
 
-        status_color = "#89d185" if "remaining" in expiry_str or "today" in expiry_str else "#cccccc"
-        status_lbl = QLabel(f"Status: {expiry_str}")
-        status_lbl.setStyleSheet(f"color: {status_color}; font-size: 9pt; font-weight: 500;")
-        lic_layout.addWidget(status_lbl)
+        status_color = "#34d399" if "remaining" in expiry_str or "today" in expiry_str or "Lifetime" in plan_str else "#94a3b8"
+        status_lbl = QLabel(f"Status: <b style='color:{status_color};'>{expiry_str}</b>")
+        status_lbl.setStyleSheet("font-size: 8.5pt;")
+        info_row.addWidget(status_lbl)
+        lic_layout.addLayout(info_row)
 
         layout.addWidget(lic_card)
 
@@ -174,9 +193,9 @@ class AboutDialog(QDialog):
         dev_card = QFrame()
         dev_card.setStyleSheet("""
             QFrame {
-                background: #252526;
-                border: 1px solid #3c3c3c;
-                border-radius: 6px;
+                background: #121722;
+                border: 1px solid #1e2638;
+                border-radius: 8px;
             }
             QLabel {
                 border: none;
@@ -184,19 +203,23 @@ class AboutDialog(QDialog):
             }
         """)
         dev_layout = QVBoxLayout(dev_card)
-        dev_layout.setContentsMargins(14, 12, 14, 12)
-        dev_layout.setSpacing(4)
+        dev_layout.setContentsMargins(16, 14, 16, 14)
+        dev_layout.setSpacing(6)
 
-        dev_title = QLabel("Developed by TN Developers Co.")
-        dev_title.setStyleSheet("color: #ffffff; font-size: 9pt; font-weight: bold;")
+        dev_title = QLabel("DEVELOPER SUPPORT")
+        dev_title.setStyleSheet("color: #64748b; font-size: 8pt; font-weight: bold; letter-spacing: 0.5px;")
         dev_layout.addWidget(dev_title)
 
-        email_lbl = QLabel("Email: tahir.naqash4@gmail.com")
-        email_lbl.setStyleSheet("color: #cccccc; font-size: 9pt;")
+        org_lbl = QLabel("TN Developers Co.")
+        org_lbl.setStyleSheet("color: #f0f6fc; font-size: 9.5pt; font-weight: 600;")
+        dev_layout.addWidget(org_lbl)
+
+        email_lbl = QLabel("Email:  <span style='color: #38bdf8;'>tahir.naqash4@gmail.com</span>")
+        email_lbl.setStyleSheet("color: #94a3b8; font-size: 8.5pt;")
         dev_layout.addWidget(email_lbl)
 
-        contact_lbl = QLabel("Contact: 03339962474")
-        contact_lbl.setStyleSheet("color: #cccccc; font-size: 9pt;")
+        contact_lbl = QLabel("WhatsApp / Contact:  <span style='color: #34d399;'>03339962474</span>")
+        contact_lbl.setStyleSheet("color: #94a3b8; font-size: 8.5pt;")
         dev_layout.addWidget(contact_lbl)
 
         layout.addWidget(dev_card)
@@ -204,22 +227,22 @@ class AboutDialog(QDialog):
 
         # Bottom Button Row
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(10)
+        btn_row.setSpacing(12)
 
         whats_new_btn = QPushButton("✨ What's New")
         whats_new_btn.setCursor(Qt.PointingHandCursor)
         whats_new_btn.setStyleSheet("""
             QPushButton {
-                background: #1e3a5f;
+                background: #172554;
                 color: #60a5fa;
                 font-size: 8.5pt;
                 font-weight: 600;
-                padding: 6px 14px;
-                border-radius: 5px;
-                border: 1px solid #2563eb;
+                padding: 7px 16px;
+                border-radius: 6px;
+                border: 1px solid #1d4ed8;
             }
             QPushButton:hover {
-                background: #2563eb;
+                background: #1d4ed8;
                 color: #ffffff;
             }
         """)
@@ -231,15 +254,16 @@ class AboutDialog(QDialog):
         close_btn.setCursor(Qt.PointingHandCursor)
         close_btn.setStyleSheet("""
             QPushButton {
-                background: #334155;
+                background: #1e2638;
                 color: #e2e8f0;
-                font-size: 9pt;
-                padding: 6px 18px;
-                border-radius: 5px;
-                border: none;
+                font-size: 8.5pt;
+                padding: 7px 20px;
+                border-radius: 6px;
+                border: 1px solid #2e3a50;
             }
             QPushButton:hover {
-                background: #475569;
+                background: #28334a;
+                color: #ffffff;
             }
         """)
         close_btn.clicked.connect(self.accept)
@@ -254,12 +278,12 @@ class AboutDialog(QDialog):
             self.copy_key_btn.setText("✅ Copied!")
             self.copy_key_btn.setStyleSheet("""
                 QPushButton {
-                    background: #2d2d2d;
-                    color: #4ec9b0;
+                    background: #142e23;
+                    color: #34d399;
                     font-size: 8pt;
-                    padding: 4px 8px;
-                    border: 1px solid #4ec9b0;
-                    border-radius: 4px;
+                    padding: 4px 10px;
+                    border: 1px solid #059669;
+                    border-radius: 5px;
                 }
             """)
             QTimer.singleShot(2000, lambda: self._reset_copy_btn() if not self.isHidden() else None)
@@ -268,15 +292,15 @@ class AboutDialog(QDialog):
         self.copy_key_btn.setText("📋 Copy")
         self.copy_key_btn.setStyleSheet("""
             QPushButton {
-                background: #2d2d2d;
-                color: #cccccc;
+                background: #1e2638;
+                color: #94a3b8;
                 font-size: 8pt;
-                padding: 4px 8px;
-                border: 1px solid #3c3c3c;
-                border-radius: 4px;
+                padding: 4px 10px;
+                border: 1px solid #2e3a50;
+                border-radius: 5px;
             }
             QPushButton:hover {
-                background: #37373d;
+                background: #25334a;
                 color: #ffffff;
             }
         """)
@@ -389,7 +413,6 @@ class ScrollEventFilter(QObject):
     def eventFilter(self, watched, event):
         etype = event.type()
         if etype == QEvent.Wheel:
-            # If horizontal intent: Shift or Alt is held, or horizontal delta is present
             if (event.modifiers() & (Qt.ShiftModifier | Qt.AltModifier)) or event.angleDelta().x() != 0:
                 self.scroll_area.wheelEvent(event)
                 return True
@@ -412,74 +435,223 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("PITC Suite")
         self.setWindowIcon(app_icon())
-        self.resize(790, 690)
-        self.setMinimumSize(560, 520)
+        self.setMinimumSize(560, 500)
+        
+        # 1. Window size & geometry restoration (700 x 720 initial, or last saved)
+        self._init_window_size()
+
         root = QWidget()
+        root.setObjectName("centralWidget")
         self.setCentralWidget(root)
         outer = QHBoxLayout(root)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
-        # Tool labels are visible when the application opens; the menu button
-        # still toggles them into the compact icon-only view.
+
+        # 2. Sleek Dark Sidebar Navigation
         self.nav_collapsed = False
         self.nav = QWidget()
+        self.nav.setObjectName("navSidebar")
+        self.nav.setStyleSheet("""
+            QWidget#navSidebar {
+                background-color: #111620;
+                border-right: 1px solid #1e2638;
+            }
+        """)
         nav_layout = QVBoxLayout(self.nav)
-        nav_layout.setContentsMargins(0, 6, 0, 6)
-        nav_layout.setSpacing(0)
-        self.nav_menu_btn = QPushButton(u"\u2630")
-        self.nav_menu_btn.setToolTip("Show/hide tool labels")
+        nav_layout.setContentsMargins(0, 8, 0, 8)
+        nav_layout.setSpacing(1)
+
+        # Sidebar Header: Toggle button & Branding
+        nav_header = QHBoxLayout()
+        nav_header.setContentsMargins(10, 4, 10, 8)
+        nav_header.setSpacing(8)
+
+        self.nav_menu_btn = QPushButton("☰")
+        self.nav_menu_btn.setFixedSize(32, 32)
+        self.nav_menu_btn.setToolTip("Toggle sidebar labels")
+        self.nav_menu_btn.setCursor(Qt.PointingHandCursor)
+        self.nav_menu_btn.setStyleSheet("""
+            QPushButton {
+                background: #18202e;
+                color: #94a3b8;
+                border: 1px solid #253043;
+                border-radius: 6px;
+                font-size: 11pt;
+                padding: 0;
+            }
+            QPushButton:hover {
+                background: #25334a;
+                border-color: #3b82f6;
+                color: #f8fafc;
+            }
+        """)
         self.nav_menu_btn.clicked.connect(self.toggle_nav)
-        nav_layout.addWidget(self.nav_menu_btn)
+        nav_header.addWidget(self.nav_menu_btn)
+
+        self.nav_brand_lbl = QLabel("PITC Suite")
+        self.nav_brand_lbl.setStyleSheet("color: #60a5fa; font-size: 11pt; font-weight: bold; letter-spacing: 0.5px;")
+        nav_header.addWidget(self.nav_brand_lbl)
+        nav_header.addStretch()
+        nav_layout.addLayout(nav_header)
+
+        # Separator line under sidebar header
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.HLine)
+        sep1.setStyleSheet("background-color: #1e2638; border: none; height: 1px; max-height: 1px; margin: 0 8px 6px 8px;")
+        nav_layout.addWidget(sep1)
+
+        # Tool buttons
         self.nav_btns = []
         self.nav_names = []
-        for i, (name, panel_class, icon_name) in enumerate(TOOLS):
+        for i, item in enumerate(TOOLS):
+            name = item[0]
+            icon_name = item[2]
             button = QPushButton(name)
             button.setIcon(get_icon(icon_name))
-            button.setIconSize(QSize(20, 20))
+            button.setIconSize(QSize(18, 18))
             button.setToolTip(name)
+            button.setCursor(Qt.PointingHandCursor)
             button.clicked.connect(lambda checked=False, idx=i: self.switch(idx))
             nav_layout.addWidget(button)
             self.nav_btns.append(button)
             self.nav_names.append(name)
+            
         nav_layout.addStretch()
 
+        # Separator line above sidebar footer
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.HLine)
+        sep2.setStyleSheet("background-color: #1e2638; border: none; height: 1px; max-height: 1px; margin: 6px 8px;")
+        nav_layout.addWidget(sep2)
 
-
+        # Update button in sidebar footer
         self.update_btn = QPushButton("Check for Updates")
+        self.update_btn.setCursor(Qt.PointingHandCursor)
         self.update_btn.setStyleSheet("""
             QPushButton {
-                background: #334155;
-                color: #e2e8f0;
-                font-size: 7.5pt;
-                padding: 4px;
-                border-radius: 4px;
-                border: none;
-                margin: 4px 8px 8px 8px;
+                background: #161c28;
+                color: #94a3b8;
+                font-size: 8pt;
+                font-weight: 500;
+                padding: 6px;
+                border-radius: 6px;
+                border: 1px solid #232d3f;
+                margin: 2px 8px;
             }
             QPushButton:hover {
-                background: #475569;
+                background: #1e293b;
+                color: #ffffff;
+                border-color: #3b82f6;
             }
         """)
         self.update_btn.clicked.connect(self._on_update_clicked)
         nav_layout.addWidget(self.update_btn)
 
+        # About button in sidebar footer
+        self.about_sidebar_btn = QPushButton("About PITC Suite")
+        self.about_sidebar_btn.setCursor(Qt.PointingHandCursor)
+        self.about_sidebar_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #64748b;
+                font-size: 8pt;
+                padding: 5px;
+                border: none;
+                border-radius: 5px;
+                margin: 2px 8px 4px 8px;
+            }
+            QPushButton:hover {
+                background: #18202e;
+                color: #cbd5e1;
+            }
+        """)
+        self.about_sidebar_btn.clicked.connect(self._show_about_dialog)
+        nav_layout.addWidget(self.about_sidebar_btn)
+
         self._apply_nav_state()
         outer.addWidget(self.nav)
+
+        # 3. Main Content Area
         content = QWidget()
+        content.setObjectName("contentArea")
+        content.setStyleSheet("""
+            QWidget#contentArea {
+                background-color: #0d1117;
+            }
+        """)
         outer.addWidget(content, 1)
+        
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(6)
-        heading = QLabel("PITC Suite")
-        heading.setStyleSheet("color: #7eb8f7; font-size: 22pt; font-weight: bold; letter-spacing: 1px;")
-        layout.addWidget(heading)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(10)
+
+        # Modern Content Header
+        header_bar = QHBoxLayout()
+        header_bar.setContentsMargins(2, 2, 2, 4)
+        header_bar.setSpacing(10)
+
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
+
+        self.header_title = QLabel("PITC Report Downloader")
+        self.header_title.setStyleSheet("color: #f8fafc; font-size: 15pt; font-weight: bold; letter-spacing: 0.3px;")
+        title_col.addWidget(self.header_title)
+
+        self.header_subtitle = QLabel("Automated CDS10 reports, OTP login & filtering")
+        self.header_subtitle.setStyleSheet("color: #94a3b8; font-size: 8.5pt;")
+        title_col.addWidget(self.header_subtitle)
+
+        header_bar.addLayout(title_col)
+        header_bar.addStretch()
+
+        # License status pill in header
+        lic = getattr(self, "active_license", None) or load_local_license()
+        plan_str = format_plan_type(lic.get("plan_type"))
+        is_active = lic.get("status") == "active" or "remaining" in format_expiry_date(lic.get("expires_at"))
+
+        self.license_badge = QPushButton(f"✨ {plan_str}")
+        self.license_badge.setCursor(Qt.PointingHandCursor)
+        self.license_badge.setToolTip("View license and app details")
+        badge_border = "#059669" if is_active else "#2e3a50"
+        badge_bg = "#06281e" if is_active else "#161c28"
+        badge_fg = "#34d399" if is_active else "#94a3b8"
+        self.license_badge.setStyleSheet(f"""
+            QPushButton {{
+                background: {badge_bg};
+                color: {badge_fg};
+                border: 1px solid {badge_border};
+                border-radius: 12px;
+                padding: 4px 12px;
+                font-size: 8pt;
+                font-weight: 600;
+            }}
+            QPushButton:hover {{
+                background: #1e293b;
+                color: #ffffff;
+                border-color: #3b82f6;
+            }}
+        """)
+        self.license_badge.clicked.connect(self._show_about_dialog)
+        header_bar.addWidget(self.license_badge)
+
+        layout.addLayout(header_bar)
+
+        # Header separator
+        header_sep = QFrame()
+        header_sep.setFrameShape(QFrame.HLine)
+        header_sep.setStyleSheet("background-color: #1e2638; border: none; height: 1px; max-height: 1px;")
+        layout.addWidget(header_sep)
+
+        # 4. Stacked Tool Panels
         self.stack = QStackedWidget()
         self.panels = []
-        for name, panel_class, icon_name in TOOLS:
+        for item in TOOLS:
+            name = item[0]
+            panel_class = item[1]
             panel = panel_class()
             self.panels.append(panel)
             if panel.layout():
-                panel.layout().setContentsMargins(0, 6, 0, 0)
+                panel.layout().setContentsMargins(4, 8, 4, 4)
                 panel.layout().setAlignment(Qt.AlignTop)
             for button in panel.findChildren(QPushButton):
                 if button.property("role") is None and not button.styleSheet():
@@ -504,46 +676,74 @@ class MainWindow(QMainWindow):
                 area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
                 area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             self.stack.addWidget(scroll)
+            
         layout.addWidget(self.stack, 1)
-        footer_layout = QHBoxLayout()
-        footer_layout.setContentsMargins(0, 4, 0, 0)
-        footer_layout.setSpacing(10)
-        footer_layout.addStretch()
 
-        about_btn = QPushButton("About")
-        about_btn.setCursor(Qt.PointingHandCursor)
-        about_btn.setStyleSheet("""
-            QPushButton {
-                background: #334155;
-                color: #e2e8f0;
-                font-size: 7.5pt;
-                padding: 4px 12px;
-                border-radius: 4px;
-                border: none;
-            }
-            QPushButton:hover {
-                background: #475569;
-            }
-        """)
-        about_btn.clicked.connect(self._show_about_dialog)
-        footer_layout.addWidget(about_btn)
-
-        footer_layout.addStretch()
-        layout.addLayout(footer_layout)
         self.switch(0)
 
-        # Check for updates in the background after 1 second
-        QTimer.singleShot(1000, lambda: check_for_updates(self, silent=True))
+        # Check for updates in the background after 1.5 seconds
+        QTimer.singleShot(1500, lambda: check_for_updates(self, silent=True))
 
         # Check if app was just updated to show What's New notes
         self._check_post_update()
+
+    def _init_window_size(self):
+        """Restore saved window size or initialize to 700 x 720."""
+        settings = QSettings("TNDevelopers", "PITCSuite")
+        saved_size = settings.value("window_size")
+        saved_geom = settings.value("window_geometry")
+        
+        if saved_geom and isinstance(saved_geom, (bytes, bytearray, QByteArray)):
+            try:
+                self.restoreGeometry(saved_geom)
+            except Exception:
+                pass
+                
+        if saved_size and isinstance(saved_size, QSize) and saved_size.isValid():
+            self.resize(saved_size)
+        elif not saved_geom:
+            self.resize(700, 720)
+
+    def _save_window_size(self):
+        """Persist current window size and geometry so subsequent launches restore them."""
+        if not self.isMaximized() and not self.isMinimized() and not self.isFullScreen():
+            settings = QSettings("TNDevelopers", "PITCSuite")
+            settings.setValue("window_size", self.size())
+            settings.setValue("window_geometry", self.saveGeometry())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._save_window_size()
 
     def _show_about_dialog(self):
         dlg = AboutDialog(self)
         dlg.exec()
 
     def switch(self, idx):
+        if idx < 0 or idx >= len(TOOLS):
+            return
+
         self.stack.setCurrentIndex(idx)
+
+        # Update top header labels
+        tool_info = TOOLS[idx]
+        self.header_title.setText(tool_info[0])
+        self.header_subtitle.setText(tool_info[3] if len(tool_info) > 3 else "")
+
+        # Smooth moderate page transition animation (fade-in 180ms ease-out)
+        curr_widget = self.stack.currentWidget()
+        if curr_widget:
+            fade_effect = QGraphicsOpacityEffect(curr_widget)
+            curr_widget.setGraphicsEffect(fade_effect)
+            fade_anim = QPropertyAnimation(fade_effect, b"opacity")
+            fade_anim.setDuration(180)
+            fade_anim.setStartValue(0.3)
+            fade_anim.setEndValue(1.0)
+            fade_anim.setEasingCurve(QEasingCurve.OutCubic)
+            fade_anim.start(QAbstractAnimation.DeleteWhenStopped)
+            self._current_fade_anim = fade_anim
+
+        # Update active nav indicator
         for i, button in enumerate(self.nav_btns):
             button.setProperty("active", "true" if i == idx else "false")
             button.style().unpolish(button)
@@ -551,7 +751,34 @@ class MainWindow(QMainWindow):
 
     def toggle_nav(self):
         self.nav_collapsed = not self.nav_collapsed
-        self._apply_nav_state()
+        
+        # Smooth animated sidebar width transition (200ms ease-out cubic)
+        target_width = 52 if self.nav_collapsed else 220
+        start_width = self.nav.width()
+        
+        self.nav_anim_group = QParallelAnimationGroup(self)
+        
+        anim_max = QPropertyAnimation(self.nav, b"maximumWidth")
+        anim_max.setDuration(200)
+        anim_max.setStartValue(start_width)
+        anim_max.setEndValue(target_width)
+        anim_max.setEasingCurve(QEasingCurve.OutCubic)
+        
+        anim_min = QPropertyAnimation(self.nav, b"minimumWidth")
+        anim_min.setDuration(200)
+        anim_min.setStartValue(start_width)
+        anim_min.setEndValue(target_width)
+        anim_min.setEasingCurve(QEasingCurve.OutCubic)
+        
+        self.nav_anim_group.addAnimation(anim_max)
+        self.nav_anim_group.addAnimation(anim_min)
+        
+        self.nav_anim_group.finished.connect(self._apply_nav_state)
+        self.nav_anim_group.start(QAbstractAnimation.DeleteWhenStopped)
+        
+        # Update text labels immediately for responsive feeling
+        if self.nav_collapsed:
+            self._apply_nav_state()
 
     def notify_update_available(self, latest_tag=None, notes=None, download_url=None, file_size=0):
         self._has_update = True
@@ -561,17 +788,17 @@ class MainWindow(QMainWindow):
         self._latest_file_size = file_size
         self.update_btn.setStyleSheet("""
             QPushButton {
-                background: #22c55e;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #10b981, stop:1 #059669);
                 color: #ffffff;
-                font-size: 7.5pt;
+                font-size: 8pt;
                 font-weight: bold;
-                padding: 4px;
-                border-radius: 4px;
-                border: none;
-                margin: 4px 8px 8px 8px;
+                padding: 6px;
+                border-radius: 6px;
+                border: 1px solid #34d399;
+                margin: 2px 8px;
             }
             QPushButton:hover {
-                background: #16a34a;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #34d399, stop:1 #10b981);
             }
         """)
         self._apply_nav_state()
@@ -598,31 +825,40 @@ class MainWindow(QMainWindow):
             settings.setValue("last_run_version", current_ver)
 
     def _apply_nav_state(self):
-        self.nav.setFixedWidth(44 if self.nav_collapsed else 215)
+        target_width = 52 if self.nav_collapsed else 220
+        self.nav.setFixedWidth(target_width)
         
         has_update = getattr(self, "_has_update", False)
         if self.nav_collapsed:
-            self.update_btn.setText("!" if has_update else u"\U0001F504")
+            self.nav_brand_lbl.hide()
+            self.update_btn.setText("!" if has_update else "🔄")
+            self.about_sidebar_btn.setText("ℹ")
         else:
+            self.nav_brand_lbl.show()
             self.update_btn.setText("Update Available!" if has_update else "Check for Updates")
+            self.about_sidebar_btn.setText("About PITC Suite")
+            
         self.update_btn.setToolTip("Check for Updates")
+        self.about_sidebar_btn.setToolTip("About PITC Suite")
         
         for button, name in zip(self.nav_btns, self.nav_names):
-            if not button.icon().isNull():
-                button.setText("" if self.nav_collapsed else name)
+            if self.nav_collapsed:
+                button.setText("")
+                button.setStyleSheet(NAV_STYLE + "\nQPushButton { padding: 8px 0; text-align: center; margin: 1px 4px; }")
             else:
-                button.setText(name.split()[0] if self.nav_collapsed else name)
-            button.setStyleSheet(NAV_STYLE + (
-                "\nQPushButton { padding:10px 0; text-align:center; }"
-                if self.nav_collapsed else ""))
+                button.setText(name)
+                button.setStyleSheet(NAV_STYLE)
 
     def closeEvent(self, event):
+        # Save window size and geometry before closing
+        self._save_window_size()
+        
         # Gracefully attempt to stop any background workers and drivers
         for panel in self.panels:
             for method in ['cancel', 'halt', 'stop', '_stop']:
                 if hasattr(panel, method):
                     try:
                         getattr(panel, method)()
-                    except:
+                    except Exception:
                         pass
         super().closeEvent(event)
