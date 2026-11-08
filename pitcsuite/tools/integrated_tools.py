@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import threading
 import configparser
@@ -317,29 +318,174 @@ class BillScraperPanel(QWidget):
 
 
 class FileMoverWorker(QThread):
+    progress = Signal(str)
     done = Signal(int, list)
     failed = Signal(str)
 
     def __init__(self, excel, source, destination):
-        super().__init__(); self.excel = excel; self.source = source; self.destination = destination
+        super().__init__()
+        self.excel = excel
+        self.source = source
+        self.destination = destination
 
     def run(self):
         try:
-            import pandas as pd
-            df = pd.read_excel(self.excel, header=None)
-            files = {}
-            for name in os.listdir(self.source):
-                path = os.path.join(self.source, name)
-                if os.path.isfile(path): files[os.path.splitext(name)[0].strip()] = name
-            moved = 0; missing = []
-            for value in df.iloc[:, 0].dropna():
-                sr = str(int(value)) if isinstance(value, (int, float)) and float(value).is_integer() else str(value).strip()
-                if sr.endswith(".0"): sr = sr[:-2]
-                if sr in files:
-                    shutil.move(os.path.join(self.source, files[sr]), os.path.join(self.destination, files[sr])); moved += 1
-                else: missing.append(sr)
+            if not os.path.isfile(self.excel):
+                raise FileNotFoundError(f"Excel file not found: {self.excel}")
+            if not os.path.isdir(self.source):
+                raise FileNotFoundError(f"Source folder not found: {self.source}")
+            os.makedirs(self.destination, exist_ok=True)
+
+            # Pre-check Excel file writability before moving any files
+            try:
+                with open(self.excel, "r+b"):
+                    pass
+            except PermissionError:
+                raise PermissionError(
+                    f"The Excel file '{os.path.basename(self.excel)}' is currently open in Microsoft Excel or another program.\n"
+                    "Please close it and try again so the tool can update Column B."
+                )
+
+            from openpyxl import load_workbook
+            try:
+                wb = load_workbook(self.excel)
+            except Exception as e:
+                if str(self.excel).lower().endswith(".xls"):
+                    raise ValueError(
+                        f"Legacy .xls files are not supported: '{os.path.basename(self.excel)}'. "
+                        "Please save or convert the file to .xlsx and try again."
+                    ) from e
+                raise
+
+            ws = wb.active
+
+            # Index available files in source directory
+            exact_name = {}
+            lower_name = {}
+            exact_stem = {}
+            lower_stem = {}
+            for fname in os.listdir(self.source):
+                fpath = os.path.join(self.source, fname)
+                if os.path.isfile(fpath):
+                    exact_name[fname] = fname
+                    lower_name[fname.lower()] = fname
+                    stem = os.path.splitext(fname)[0].strip()
+                    exact_stem[stem] = fname
+                    lower_stem[stem.lower()] = fname
+
+            def _resolve_file(key):
+                if not key:
+                    return None
+                if key in exact_name:
+                    return exact_name[key]
+                if key in exact_stem:
+                    return exact_stem[key]
+                key_stem = os.path.splitext(key)[0].strip()
+                if key_stem in exact_stem:
+                    return exact_stem[key_stem]
+                k_low = key.lower()
+                if k_low in lower_name:
+                    return lower_name[k_low]
+                if k_low in lower_stem:
+                    return lower_stem[k_low]
+                ks_low = key_stem.lower()
+                if ks_low in lower_stem:
+                    return lower_stem[ks_low]
+                return None
+
+            def _remove_from_index(fname):
+                exact_name.pop(fname, None)
+                lower_name.pop(fname.lower(), None)
+                stem = os.path.splitext(fname)[0].strip()
+                exact_stem.pop(stem, None)
+                lower_stem.pop(stem.lower(), None)
+
+            def _clean_str(val):
+                if val is None:
+                    return ""
+                if isinstance(val, float) and val.is_integer():
+                    return str(int(val))
+                s = str(val).strip()
+                if s.endswith(".0"):
+                    try:
+                        f = float(s)
+                        if f.is_integer():
+                            return str(int(f))
+                    except ValueError:
+                        pass
+                return s
+
+            val_a1 = ws.cell(1, 1).value
+            val_b1 = ws.cell(1, 2).value
+            str_a1 = _clean_str(val_a1)
+            str_b1 = _clean_str(val_b1).lower()
+
+            header_keywords = {
+                "sr", "srno", "serial", "serialno", "file", "filename", "filelist",
+                "files", "pdf", "pdfs", "name", "account", "accountno", "acc", "accno",
+                "reference", "ref", "refno", "id", "input", "code", "record", "item",
+                "title", "document", "documents"
+            }
+            norm_a1 = re.sub(r'[\s_\.\-#]+', '', str_a1).lower()
+            is_header = False
+
+            if str_b1 in {"status", "remark", "remarks", "result", "state", "action", "outcome"}:
+                is_header = True
+            elif norm_a1 in header_keywords:
+                if not _resolve_file(str_a1):
+                    is_header = True
+            elif ws.max_row >= 2:
+                str_a2 = _clean_str(ws.cell(2, 1).value)
+                if str_a1 and not str_a1.replace('.', '', 1).isdigit() and str_a2.replace('.', '', 1).isdigit():
+                    if not _resolve_file(str_a1):
+                        is_header = True
+
+            if is_header:
+                if not val_b1 or str_b1 == "":
+                    ws.cell(1, 2).value = "Status"
+                    if ws.cell(1, 1).font and ws.cell(1, 1).font.bold:
+                        ws.cell(1, 2).font = ws.cell(1, 1).font.copy(bold=True)
+                start_row = 2
+            else:
+                start_row = 1
+
+            moved = 0
+            missing = []
+            moved_files = set()
+
+            total_rows = ws.max_row
+            for r in range(start_row, total_rows + 1):
+                cell_val = ws.cell(r, 1).value
+                sr = _clean_str(cell_val)
+                if not sr:
+                    continue
+
+                self.progress.emit(f"Status: Checking {sr} ({r}/{total_rows})...")
+
+                matched_file = _resolve_file(sr)
+                if matched_file:
+                    src_file = os.path.join(self.source, matched_file)
+                    dst_file = os.path.join(self.destination, matched_file)
+                    try:
+                        shutil.move(src_file, dst_file)
+                        _remove_from_index(matched_file)
+                        moved_files.add(matched_file.lower())
+                        moved_files.add(os.path.splitext(matched_file)[0].strip().lower())
+                        ws.cell(r, 2).value = "Moved"
+                        moved += 1
+                    except Exception as move_err:
+                        ws.cell(r, 2).value = f"Error: {move_err}"
+                elif sr.lower() in moved_files or os.path.splitext(sr)[0].strip().lower() in moved_files:
+                    ws.cell(r, 2).value = "Moved"
+                else:
+                    ws.cell(r, 2).value = "Not Found"
+                    missing.append(sr)
+
+            wb.save(self.excel)
+            wb.close()
             self.done.emit(moved, missing)
-        except Exception as exc: self.failed.emit(str(exc))
+        except Exception as exc:
+            self.failed.emit(str(exc))
 
 
 class FileMoverPanel(QWidget):
@@ -368,7 +514,6 @@ class FileMoverPanel(QWidget):
             form.addWidget(button, i, 2)
         form.setColumnStretch(1, 1)
         layout.addWidget(group)
-
         act_row = QHBoxLayout()
         self.start_btn = QPushButton("▶  MOVE FILES")
         self.start_btn.setStyleSheet(START_BTN)
@@ -376,7 +521,13 @@ class FileMoverPanel(QWidget):
         act_row.addWidget(self.start_btn)
         act_row.addStretch()
         layout.addLayout(act_row)
-        self.status = QLabel("Status: Idle"); layout.addWidget(self.status); layout.addStretch()
+        self.status = QLabel("Status: Idle")
+        self.status.setStyleSheet("color:#4a90d9;")
+        layout.addWidget(self.status)
+        self.log_box = QTextEdit()
+        self.log_box.setReadOnly(True)
+        self.log_box.setMinimumHeight(65)
+        layout.addWidget(self.log_box, 1)
 
     def _browse(self, edit, kind):
         path = QFileDialog.getOpenFileName(self, "Excel file", "", "Excel files (*.xlsx *.xls)")[0] if kind == "excel" else QFileDialog.getExistingDirectory(self, "Select folder")
@@ -385,16 +536,32 @@ class FileMoverPanel(QWidget):
     def _start(self):
         if not all((self.excel_ed.text(), self.source_ed.text(), self.destination_ed.text())):
             QMessageBox.warning(self, "Missing input", "Select the Excel file, source folder, and destination folder."); return
-        self.start_btn.setEnabled(False); self.status.setText("Status: Moving files...")
+        self.log_box.clear(); self.start_btn.setEnabled(False); self.status.setText("Status: Moving files...")
         self.worker = FileMoverWorker(self.excel_ed.text(), self.source_ed.text(), self.destination_ed.text())
+        self.worker.progress.connect(self.status.setText)
         self.worker.done.connect(self._done); self.worker.failed.connect(self._failed); self.worker.finished.connect(lambda: self.start_btn.setEnabled(True)); self.worker.start()
 
     def _done(self, moved, missing):
-        self.status.setText(f"Status: Completed — moved {moved} file(s)")
-        message = f"Moved {moved} file(s).\n\n" + ("Missing files:\n\n" + "\n".join(missing) if missing else "All files moved successfully.")
-        notify(self, "Completed", message, folder_path=self.destination_ed.text())
+        if missing:
+            for item in missing:
+                self.log_box.append(f"⚠️ Not Found: {item}")
+            if moved > 0:
+                self.status.setText(f"Status: Completed — moved {moved} file(s), {len(missing)} not found")
+            else:
+                self.status.setText(f"Status: Completed with issues — 0 files moved, {len(missing)} not found")
+            message = f"Moved {moved} file(s) with {len(missing)} not found.\nStatus updated in Column B of Excel file."
+            details = "Missing files:\n" + "\n".join(missing)
+        else:
+            self.status.setText(f"Status: Completed — moved {moved} file(s) successfully")
+            message = f"Moved {moved} file(s) successfully.\nStatus updated in Column B of Excel file."
+            details = None
 
-    def _failed(self, message): self.status.setText("Status: Failed"); notify(self, "Error", message, critical=True)
+        notify(self, "File Mover", message, file_path=self.excel_ed.text(), folder_path=self.destination_ed.text(), details=details)
+
+    def _failed(self, message):
+        self.status.setText("Status: Failed")
+        self.log_box.append(f"❌ Error: {message}")
+        notify(self, "File Mover Error", message, critical=True)
 
 
 class CP52Worker(QThread):

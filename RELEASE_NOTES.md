@@ -1,3 +1,3 @@
-• **PITC Downloader — Windows 11 Chrome Driver Stability:** Resolved browser restart failure after 35 AC numbers on Windows 11 by adding forceful process tree cleanup, lingering lock file clearing, and anti-background Chromium flags.
-• **Robust Session Recovery & Auto-Save:** Added session-aware login detection and automated 3-attempt restart retry loop to prevent thread crashes, saving Excel progress before restarts.
-• **Windows Efficiency Mode (EcoQoS) Handling:** Hardened Chrome shutdown and reopen pipeline against Windows 11 process throttling and file handle delays.
+• **File Renamer & File Mover Dialog Fix:** Resolved message box overflowing screen on large batches of skipped/missing files by introducing auto-scroll details and fixed dialog height boundaries.
+• **Keyboard Dismissal (Esc & Enter):** Added full keyboard control so users can immediately dismiss completion and alert dialogs without getting stuck.
+• **File Mover In-Panel Log Box:** Added dedicated live log box to File Mover panel to log missing files in real-time alongside Excel status updates.

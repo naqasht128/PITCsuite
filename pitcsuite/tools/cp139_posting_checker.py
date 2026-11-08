@@ -1416,11 +1416,7 @@ class CP139PostingCheckerPanel(QWidget):
             if not path.lower().endswith(".xlsx"):
                 path += ".xlsx"
             download_cp139_template(path)
-            box = QMessageBox(QMessageBox.Information, "Template Saved", f"CP-139 template saved to:\n{path}", parent=self)
-            box.addButton("Open File", QMessageBox.ActionRole).clicked.connect(lambda: os.startfile(path))
-            ok_btn = box.addButton(QMessageBox.Ok)
-            box.setEscapeButton(ok_btn)
-            box.open()
+            notify(self, "Template Saved", f"CP-139 template saved to:\n{path}", file_path=path)
 
     def _browse_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Output Folder", self.out_dir_ed.text().strip())
@@ -1515,18 +1511,7 @@ class CP139PostingCheckerPanel(QWidget):
             msg_body += f"\nOutput Folder:\n{out_folder}\n\nExcel Results File:\n{os.path.basename(saved_path)}"
 
         # Dialog with Open Excel and Open Folder options
-        box = QMessageBox(QMessageBox.Information, "CP 139 Completed", msg_body, parent=self)
-        box.setAttribute(Qt.WA_DeleteOnClose)
-
-        open_excel_btn = box.addButton("Open Excel", QMessageBox.ActionRole)
-        open_excel_btn.clicked.connect(lambda: os.startfile(saved_path) if os.path.exists(saved_path) else None)
-
-        open_folder_btn = box.addButton("Open Folder", QMessageBox.ActionRole)
-        open_folder_btn.clicked.connect(lambda: os.startfile(out_folder) if os.path.exists(out_folder) else None)
-
-        ok_btn = box.addButton(QMessageBox.Ok)
-        box.setEscapeButton(ok_btn)
-        box.open()
+        notify(self, "CP 139 Completed", msg_body, file_path=saved_path, folder_path=out_folder)
 
     def _failed(self, error_msg: str):
         self.status.setText("Status: Failed")
