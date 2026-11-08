@@ -775,7 +775,7 @@ class MainWindow(QMainWindow):
         self._current_accent_key = accent_key
         from pitcsuite.ui_helpers import THEMES, ACCENTS, NAV_STYLE
         palette_data = THEMES.get(theme_key, THEMES["vesper"])
-        accent = ACCENTS.get(accent_key, ACCENTS["red"])
+        accent = ACCENTS.get(accent_key, ACCENTS["blue"])
         
         self.nav.setStyleSheet(f"""
             QWidget#navSidebar {{

@@ -273,5 +273,27 @@ class TestUIImprovements(unittest.TestCase):
         self.assertEqual(panel.sp_pwait.value(), 5)
 
 
+    def test_personalization_defaults_and_reset(self):
+        panel = SettingsPanel()
+        panel.reset_personalization()
+
+        self.assertEqual(panel.theme_cb.currentData(), "vesper")
+        self.assertEqual(panel._current_accent, "blue")
+        self.assertEqual(panel.font_cb.currentData(), "inter")
+        self.assertEqual(panel.scale_cb.currentData(), "standard")
+        self.assertEqual(panel.density_cb.currentData(), "compact")
+        self.assertEqual(panel.sidebar_style_cb.currentData(), "expanded")
+        self.assertEqual(panel.launch_mode_cb.currentData(), "saved")
+        self.assertTrue(panel.chk_smooth_anim.isChecked())
+        self.assertTrue(panel.chk_auto_update.isChecked())
+
+    def test_installer_script_icon_and_associations(self):
+        iss_path = Path(__file__).parent.parent / "installer.iss"
+        content = iss_path.read_text(encoding="utf-8")
+        self.assertIn("ChangesAssociations=yes", content)
+        self.assertIn('Source: "pitcsuite\\assets\\pitcsuite_icon.ico"; DestDir: "{app}"; Flags: ignoreversion', content)
+        self.assertIn('IconFilename: "{app}\\pitcsuite_icon.ico"', content)
+
+
 if __name__ == "__main__":
     unittest.main()

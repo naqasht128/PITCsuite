@@ -28,6 +28,16 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.106": [
+        "<b>UI Changes & Default Styling:</b> Set Vesper theme, Electric Blue accent, Inter typography, Standard UI scale (8.5pt), and Compact density as application defaults.",
+        "<b>Added Customization Tab under Settings:</b> Added dedicated Personalization and Customization tab in Settings for real-time live preview and configuration of themes, accent palettes, font scaling, density, activity bar mode, and window launch behavior.",
+        "<b>Desktop Icon Resolution:</b> Packaged standalone pitcsuite_icon.ico directly with installer, configured desktop and start menu shortcuts with explicit icon targets, and automated shell icon cache refresh on launch."
+    ],
+    "v2.8.105": [
+        "<b>UI Enhancements & Light Mode Contrast:</b> Refined UI elements, boosted text and heading contrast in light mode, and upgraded application vector icon.",
+        "<b>Icon Update:</b> Redesigned app icon with modern dark roundish squircle frame and cyan lightning motif.",
+        "<b>Settings Refinement:</b> Modernized Personalization settings controls and timing defaults."
+    ],
     "v2.8.104": [
         "<b>Vesper Theme and Typography Engine:</b> Introduced sleek Vesper theme as the new default palette with selectable font families (Inter default, System UI, Google Sans).",
         "<b>Standardized 800x650 Window and Responsive Scaling:</b> Calibrated default window to 800x650 with smooth shrinking down to 650x520 and standardized 3-column tool grid alignments.",

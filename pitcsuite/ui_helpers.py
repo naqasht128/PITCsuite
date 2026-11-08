@@ -200,7 +200,7 @@ def get_current_accent_key() -> str:
     if _ACTIVE_ACCENT_KEY is not None:
         return _ACTIVE_ACCENT_KEY
     settings = QSettings("TNDevelopers", "PITCSuite")
-    return str(settings.value("accent_color", "red")).lower()
+    return str(settings.value("accent_color", "blue")).lower()
 
 
 def get_current_font_family_key() -> str:
@@ -216,7 +216,7 @@ def get_current_font_size_key() -> str:
     if _ACTIVE_FONT_SIZE_KEY is not None:
         return _ACTIVE_FONT_SIZE_KEY
     settings = QSettings("TNDevelopers", "PITCSuite")
-    return str(settings.value("ui_scale", "compact")).lower()
+    return str(settings.value("ui_scale", "standard")).lower()
 
 
 def get_current_density_key() -> str:
@@ -227,10 +227,10 @@ def get_current_density_key() -> str:
     return str(settings.value("density", "compact")).lower()
 
 
-def generate_theme_stylesheet(theme_key="vesper", accent_key="red", font_size_key="compact", density="compact", font_family_key="inter") -> str:
+def generate_theme_stylesheet(theme_key="vesper", accent_key="blue", font_size_key="standard", density="compact", font_family_key="inter") -> str:
     palette_data = THEMES.get(theme_key, THEMES["vesper"])
-    accent = ACCENTS.get(accent_key, ACCENTS["red"])
-    font_pt = FONT_SIZES.get(font_size_key, 8.0)
+    accent = ACCENTS.get(accent_key, ACCENTS["blue"])
+    font_pt = FONT_SIZES.get(font_size_key, 8.5)
     font_info = FONTS.get(font_family_key, FONTS["inter"])
     font_family_css = font_info["family"]
     
@@ -880,8 +880,8 @@ def configure_app(app, theme_key=None, accent_key=None, font_size_key=None, dens
         font_family_key = get_current_font_family_key()
 
     palette_data = THEMES.get(theme_key, THEMES["vesper"])
-    accent = ACCENTS.get(accent_key, ACCENTS["red"])
-    font_pt = FONT_SIZES.get(font_size_key, 8.0)
+    accent = ACCENTS.get(accent_key, ACCENTS["blue"])
+    font_pt = FONT_SIZES.get(font_size_key, 8.5)
     font_info = FONTS.get(font_family_key, FONTS["inter"])
 
     cur_style = app.style()
@@ -1004,7 +1004,7 @@ class NotificationDialog(QDialog):
         theme_key = get_current_theme_key()
         accent_key = get_current_accent_key()
         palette_data = THEMES.get(theme_key, THEMES["vesper"])
-        accent = ACCENTS.get(accent_key, ACCENTS["red"])
+        accent = ACCENTS.get(accent_key, ACCENTS["blue"])
         font_info = FONTS.get(get_current_font_family_key(), FONTS["inter"])
         font_family = font_info["family"]
 

@@ -410,9 +410,9 @@ class SettingsPanel(QWidget):
 
     def _apply_current_ui(self, preview_only=False):
         theme_key = self.theme_cb.currentData() or "vesper"
-        accent_key = getattr(self, "_current_accent", "red")
+        accent_key = getattr(self, "_current_accent", "blue")
         font_family_key = self.font_cb.currentData() or "inter"
-        font_size_key = self.scale_cb.currentData() or "compact"
+        font_size_key = self.scale_cb.currentData() or "standard"
         density_key = self.density_cb.currentData() or "compact"
 
         self._update_accent_buttons_style(theme_key)
@@ -429,9 +429,9 @@ class SettingsPanel(QWidget):
     def save_personalization(self):
         settings = QSettings("TNDevelopers", "PITCSuite")
         theme_key = self.theme_cb.currentData() or "vesper"
-        accent_key = getattr(self, "_current_accent", "red")
+        accent_key = getattr(self, "_current_accent", "blue")
         font_family_key = self.font_cb.currentData() or "inter"
-        scale_key = self.scale_cb.currentData() or "compact"
+        scale_key = self.scale_cb.currentData() or "standard"
         density_key = self.density_cb.currentData() or "compact"
         sidebar_key = self.sidebar_style_cb.currentData() or "expanded"
         launch_key = self.launch_mode_cb.currentData() or "saved"
@@ -462,12 +462,12 @@ class SettingsPanel(QWidget):
         idx_t = self.theme_cb.findData("vesper")
         if idx_t >= 0: self.theme_cb.setCurrentIndex(idx_t)
 
-        self._select_accent("red")
+        self._select_accent("blue")
 
         idx_f = self.font_cb.findData("inter")
         if idx_f >= 0: self.font_cb.setCurrentIndex(idx_f)
 
-        idx_s = self.scale_cb.findData("compact")
+        idx_s = self.scale_cb.findData("standard")
         if idx_s >= 0: self.scale_cb.setCurrentIndex(idx_s)
 
         idx_d = self.density_cb.findData("compact")
@@ -502,13 +502,13 @@ class SettingsPanel(QWidget):
         try:
             settings = QSettings("TNDevelopers", "PITCSuite")
 
-            # 1. Personalization (Defaulting to Vesper, Crimson Red, Inter, Compact, Compact, Saved geometry)
+            # 1. Personalization (Defaulting to Vesper, Electric Blue, Inter, Standard Scale, Compact Density, Saved geometry)
             theme = str(settings.value("theme", "vesper")).lower()
             idx_t = self.theme_cb.findData(theme)
             if idx_t >= 0:
                 self.theme_cb.setCurrentIndex(idx_t)
 
-            accent = str(settings.value("accent_color", "red")).lower()
+            accent = str(settings.value("accent_color", "blue")).lower()
             self._current_accent = accent
             if accent in self.accent_btns:
                 self.accent_btns[accent].setChecked(True)
@@ -518,7 +518,7 @@ class SettingsPanel(QWidget):
             if idx_f >= 0:
                 self.font_cb.setCurrentIndex(idx_f)
 
-            scale = str(settings.value("ui_scale", "compact")).lower()
+            scale = str(settings.value("ui_scale", "standard")).lower()
             idx_s = self.scale_cb.findData(scale)
             if idx_s >= 0:
                 self.scale_cb.setCurrentIndex(idx_s)
