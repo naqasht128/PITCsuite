@@ -92,37 +92,17 @@ class SettingsPanel(QWidget):
         color_grid.setVerticalSpacing(8)
         self.accent_btns = {}
         self.accent_group = QButtonGroup(self)
-
         for idx, (key, info) in enumerate(ACCENTS.items()):
             btn = QPushButton(f"● {info['name']}")
             btn.setCheckable(True)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setProperty("accent_key", key)
-            hex_c = info["hex"]
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: #252526;
-                    color: {hex_c};
-                    border: 1px solid #3c3c3c;
-                    border-radius: 4px;
-                    padding: 5px 8px;
-                    font-weight: 600;
-                    font-size: 8pt;
-                }}
-                QPushButton:hover {{
-                    border-color: {hex_c};
-                    background-color: #2e2e2e;
-                }}
-                QPushButton:checked {{
-                    background-color: {hex_c};
-                    color: #ffffff;
-                    border-color: {hex_c};
-                }}
-            """)
             btn.clicked.connect(lambda checked=False, k=key: self._select_accent(k))
             self.accent_group.addButton(btn)
             self.accent_btns[key] = btn
             color_grid.addWidget(btn, idx // 3, idx % 3)
+
+        self._update_accent_buttons_style()
 
         ab_layout.addLayout(color_grid)
         layout.addWidget(accent_box)
@@ -167,8 +147,8 @@ class SettingsPanel(QWidget):
 
         wb_layout.addWidget(QLabel("Default Activity Bar:"), 0, 0)
         self.sidebar_style_cb = QComboBox()
-        self.sidebar_style_cb.addItem("Compact Rail (48px Icons Only)", "compact")
         self.sidebar_style_cb.addItem("Expanded Rail (180px with Labels)", "expanded")
+        self.sidebar_style_cb.addItem("Compact Rail (48px Icons Only)", "compact")
         wb_layout.addWidget(self.sidebar_style_cb, 0, 1)
 
         wb_layout.addWidget(QLabel("Launch Window Size:"), 1, 0)
@@ -192,12 +172,12 @@ class SettingsPanel(QWidget):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
 
-        self.btn_save_personalization = QPushButton("💾  Save and Apply Personalization")
+        self.btn_save_personalization = QPushButton("Save and Apply Personalization")
         self.btn_save_personalization.setProperty("role", "primary")
         self.btn_save_personalization.clicked.connect(self.save_personalization)
         btn_row.addWidget(self.btn_save_personalization)
 
-        self.btn_reset_personalization = QPushButton("↺  Reset to Defaults")
+        self.btn_reset_personalization = QPushButton("Reset to Defaults")
         self.btn_reset_personalization.clicked.connect(self.reset_personalization)
         btn_row.addWidget(self.btn_reset_personalization)
 
@@ -270,7 +250,7 @@ class SettingsPanel(QWidget):
         layout.addWidget(self.path_lbl)
 
         bh = QHBoxLayout()
-        self.btn_save_cred = QPushButton("💾  Save Credentials")
+        self.btn_save_cred = QPushButton("Save Credentials")
         self.btn_save_cred.setProperty("role", "primary")
         self.btn_save_cred.clicked.connect(self.save_credentials)
         bh.addWidget(self.btn_save_cred)
@@ -349,7 +329,7 @@ class SettingsPanel(QWidget):
         layout.addWidget(g_info)
 
         bh = QHBoxLayout()
-        btn_save_paths = QPushButton("💾  Save Paths")
+        btn_save_paths = QPushButton("Save Paths")
         btn_save_paths.setProperty("role", "primary")
         btn_save_paths.clicked.connect(self.save_paths)
         bh.addWidget(btn_save_paths)
@@ -366,6 +346,57 @@ class SettingsPanel(QWidget):
     # =================================================================
     # ACTIONS & EVENT HANDLERS
     # =================================================================
+    def _update_accent_buttons_style(self, theme_key: str = None):
+        if theme_key is None:
+            if hasattr(self, "theme_cb"):
+                theme_key = self.theme_cb.currentData() or "vesper"
+            else:
+                from pitcsuite.ui_helpers import get_current_theme_key
+                theme_key = get_current_theme_key()
+
+        from pitcsuite.ui_helpers import THEMES, ACCENTS
+        palette_data = THEMES.get(theme_key, THEMES["vesper"])
+        is_light = (theme_key == "light")
+
+        bg_unselected = palette_data.get("card_bg", "#ffffff") if is_light else palette_data.get("input_bg", "#252526")
+        border_unselected = palette_data.get("border", "#d1d5db") if is_light else palette_data.get("border", "#3c3c3c")
+        bg_hover = palette_data.get("item_hover", "#f1f5f9") if is_light else palette_data.get("item_hover", "#2e2e2e")
+
+        light_text_map = {
+            "amber": "#b45309",
+            "teal": "#0e7490",
+            "green": "#047857",
+            "blue": "#006cc1",
+            "purple": "#6d28d9",
+            "red": "#be123c",
+        }
+
+        for key, btn in getattr(self, "accent_btns", {}).items():
+            info = ACCENTS.get(key, ACCENTS["blue"])
+            hex_c = info["hex"]
+            text_c = light_text_map.get(key, hex_c) if is_light else hex_c
+
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {bg_unselected};
+                    color: {text_c};
+                    border: 1px solid {border_unselected};
+                    border-radius: 4px;
+                    padding: 5px 8px;
+                    font-weight: 600;
+                    font-size: 8pt;
+                }}
+                QPushButton:hover {{
+                    border-color: {hex_c};
+                    background-color: {bg_hover};
+                }}
+                QPushButton:checked {{
+                    background-color: {hex_c};
+                    color: #ffffff;
+                    border-color: {hex_c};
+                }}
+            """)
+
     def _select_accent(self, key: str):
         self._current_accent = key
         for k, btn in self.accent_btns.items():
@@ -373,6 +404,8 @@ class SettingsPanel(QWidget):
         self._apply_current_ui(preview_only=True)
 
     def _on_live_preview_changed(self):
+        if getattr(self, "_is_loading", False):
+            return
         self._apply_current_ui(preview_only=True)
 
     def _apply_current_ui(self, preview_only=False):
@@ -381,6 +414,8 @@ class SettingsPanel(QWidget):
         font_family_key = self.font_cb.currentData() or "inter"
         font_size_key = self.scale_cb.currentData() or "compact"
         density_key = self.density_cb.currentData() or "compact"
+
+        self._update_accent_buttons_style(theme_key)
 
         app = QApplication.instance()
         if app:
@@ -398,7 +433,7 @@ class SettingsPanel(QWidget):
         font_family_key = self.font_cb.currentData() or "inter"
         scale_key = self.scale_cb.currentData() or "compact"
         density_key = self.density_cb.currentData() or "compact"
-        sidebar_key = self.sidebar_style_cb.currentData() or "compact"
+        sidebar_key = self.sidebar_style_cb.currentData() or "expanded"
         launch_key = self.launch_mode_cb.currentData() or "saved"
 
         settings.setValue("theme", theme_key)
@@ -413,10 +448,12 @@ class SettingsPanel(QWidget):
 
         self._apply_current_ui()
 
-        # Update sidebar if changed
+        # Update sidebar only if target state differs from current
         parent_win = self.window()
-        if parent_win and hasattr(parent_win, "set_sidebar_collapsed"):
-            parent_win.set_sidebar_collapsed(sidebar_key == "compact")
+        if parent_win and hasattr(parent_win, "nav_collapsed") and hasattr(parent_win, "set_sidebar_collapsed"):
+            target_collapsed = (sidebar_key == "compact")
+            if parent_win.nav_collapsed != target_collapsed:
+                parent_win.set_sidebar_collapsed(target_collapsed)
 
         self.personalization_status.setText("✔  Personalization settings saved and applied!")
         self.personalization_status.setStyleSheet("color:#4ec9b0; font-size:11px;")
@@ -436,7 +473,7 @@ class SettingsPanel(QWidget):
         idx_d = self.density_cb.findData("compact")
         if idx_d >= 0: self.density_cb.setCurrentIndex(idx_d)
 
-        idx_sb = self.sidebar_style_cb.findData("compact")
+        idx_sb = self.sidebar_style_cb.findData("expanded")
         if idx_sb >= 0: self.sidebar_style_cb.setCurrentIndex(idx_sb)
 
         idx_lm = self.launch_mode_cb.findData("saved")
@@ -448,66 +485,93 @@ class SettingsPanel(QWidget):
         self.save_personalization()
         self.personalization_status.setText("✔  Reset to default Vesper theme and styling.")
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        parent_win = self.window()
+        if parent_win and hasattr(parent_win, "nav_collapsed"):
+            curr_style = "compact" if parent_win.nav_collapsed else "expanded"
+            idx = self.sidebar_style_cb.findData(curr_style)
+            if idx >= 0 and self.sidebar_style_cb.currentIndex() != idx:
+                self.sidebar_style_cb.blockSignals(True)
+                self.sidebar_style_cb.setCurrentIndex(idx)
+                self.sidebar_style_cb.blockSignals(False)
+        self._update_accent_buttons_style()
+
     def load_all(self):
-        settings = QSettings("TNDevelopers", "PITCSuite")
+        self._is_loading = True
+        try:
+            settings = QSettings("TNDevelopers", "PITCSuite")
 
-        # 1. Personalization (Defaulting to Vesper, Crimson Red, Inter, Compact, Compact, Saved geometry)
-        theme = str(settings.value("theme", "vesper")).lower()
-        idx_t = self.theme_cb.findData(theme)
-        if idx_t >= 0: self.theme_cb.setCurrentIndex(idx_t)
+            # 1. Personalization (Defaulting to Vesper, Crimson Red, Inter, Compact, Compact, Saved geometry)
+            theme = str(settings.value("theme", "vesper")).lower()
+            idx_t = self.theme_cb.findData(theme)
+            if idx_t >= 0:
+                self.theme_cb.setCurrentIndex(idx_t)
 
-        accent = str(settings.value("accent_color", "red")).lower()
-        self._current_accent = accent
-        if accent in self.accent_btns:
-            self.accent_btns[accent].setChecked(True)
+            accent = str(settings.value("accent_color", "red")).lower()
+            self._current_accent = accent
+            if accent in self.accent_btns:
+                self.accent_btns[accent].setChecked(True)
 
-        font_family = str(settings.value("font_family", "inter")).lower()
-        idx_f = self.font_cb.findData(font_family)
-        if idx_f >= 0: self.font_cb.setCurrentIndex(idx_f)
+            font_family = str(settings.value("font_family", "inter")).lower()
+            idx_f = self.font_cb.findData(font_family)
+            if idx_f >= 0:
+                self.font_cb.setCurrentIndex(idx_f)
 
-        scale = str(settings.value("ui_scale", "compact")).lower()
-        idx_s = self.scale_cb.findData(scale)
-        if idx_s >= 0: self.scale_cb.setCurrentIndex(idx_s)
+            scale = str(settings.value("ui_scale", "compact")).lower()
+            idx_s = self.scale_cb.findData(scale)
+            if idx_s >= 0:
+                self.scale_cb.setCurrentIndex(idx_s)
 
-        density = str(settings.value("density", "compact")).lower()
-        idx_d = self.density_cb.findData(density)
-        if idx_d >= 0: self.density_cb.setCurrentIndex(idx_d)
+            density = str(settings.value("density", "compact")).lower()
+            idx_d = self.density_cb.findData(density)
+            if idx_d >= 0:
+                self.density_cb.setCurrentIndex(idx_d)
 
-        sidebar = str(settings.value("sidebar_style", "compact")).lower()
-        idx_sb = self.sidebar_style_cb.findData(sidebar)
-        if idx_sb >= 0: self.sidebar_style_cb.setCurrentIndex(idx_sb)
+            parent_win = self.window()
+            if parent_win and hasattr(parent_win, "nav_collapsed"):
+                sidebar = "compact" if parent_win.nav_collapsed else "expanded"
+            else:
+                sidebar = str(settings.value("sidebar_style", "expanded")).lower()
+            idx_sb = self.sidebar_style_cb.findData(sidebar)
+            if idx_sb >= 0:
+                self.sidebar_style_cb.setCurrentIndex(idx_sb)
 
-        launch = str(settings.value("launch_mode", "saved")).lower()
-        idx_l = self.launch_mode_cb.findData(launch)
-        if idx_l >= 0: self.launch_mode_cb.setCurrentIndex(idx_l)
+            launch = str(settings.value("launch_mode", "saved")).lower()
+            idx_l = self.launch_mode_cb.findData(launch)
+            if idx_l >= 0:
+                self.launch_mode_cb.setCurrentIndex(idx_l)
 
-        self.chk_smooth_anim.setChecked(settings.value("smooth_anim", True, type=bool))
-        self.chk_auto_update.setChecked(settings.value("auto_update_check", True, type=bool))
+            self.chk_smooth_anim.setChecked(settings.value("smooth_anim", True, type=bool))
+            self.chk_auto_update.setChecked(settings.value("auto_update_check", True, type=bool))
 
-        # 2. Credentials
-        saved_disco = str(settings.value("pitc_disco", "PESCO")).strip() or "PESCO"
-        path = _config_path()
-        cfg = configparser.ConfigParser()
-        if os.path.exists(path):
-            cfg.read(path)
-            self.user_ed.setText(cfg.get("credentials", "username", fallback=""))
-            self.pass_ed.setText(cfg.get("credentials", "password", fallback=""))
-            self.otp_ed.setText(cfg.get("credentials", "otp_secret", fallback=""))
-            saved_disco = cfg.get("credentials", "disco", fallback=cfg.get("pitc_downloader", "disco", fallback=saved_disco))
-            self.cred_status.setText("")
-        else:
-            self.cred_status.setText("⚠  config.ini not found — will be created on Save.")
-            self.cred_status.setStyleSheet("color:#ca4; font-size:11px;")
+            # 2. Credentials
+            saved_disco = str(settings.value("pitc_disco", "PESCO")).strip() or "PESCO"
+            path_cfg = _config_path()
+            cfg = configparser.ConfigParser()
+            if os.path.exists(path_cfg):
+                cfg.read(path_cfg)
+                self.user_ed.setText(cfg.get("credentials", "username", fallback=""))
+                self.pass_ed.setText(cfg.get("credentials", "password", fallback=""))
+                self.otp_ed.setText(cfg.get("credentials", "otp_secret", fallback=""))
+                saved_disco = cfg.get("credentials", "disco", fallback=cfg.get("pitc_downloader", "disco", fallback=saved_disco))
+                self.cred_status.setText("")
+            else:
+                self.cred_status.setText("⚠  config.ini not found — will be created on Save.")
+                self.cred_status.setStyleSheet("color:#ca4; font-size:11px;")
 
-        idx = self.disco_cb.findText(saved_disco)
-        if idx >= 0:
-            self.disco_cb.setCurrentIndex(idx)
+            idx = self.disco_cb.findText(saved_disco)
+            if idx >= 0:
+                self.disco_cb.setCurrentIndex(idx)
 
-        # 3. System Paths
-        saved_dl = str(settings.value("default_download_dir", r"D:\PITC_PDFs")).strip() or r"D:\PITC_PDFs"
-        saved_profile = str(settings.value("default_chrome_profile", r"C:\ChromeProfiles\PITC")).strip() or r"C:\ChromeProfiles\PITC"
-        self.dl_dir_ed.setText(saved_dl)
-        self.profile_dir_ed.setText(saved_profile)
+            # 3. System Paths
+            saved_dl = str(settings.value("default_download_dir", r"D:\PITC_PDFs")).strip() or r"D:\PITC_PDFs"
+            saved_profile = str(settings.value("default_chrome_profile", r"C:\ChromeProfiles\PITC")).strip() or r"C:\ChromeProfiles\PITC"
+            self.dl_dir_ed.setText(saved_dl)
+            self.profile_dir_ed.setText(saved_profile)
+        finally:
+            self._is_loading = False
+            self._update_accent_buttons_style()
 
     def save_credentials(self):
         username = self.user_ed.text().strip()

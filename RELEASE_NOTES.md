@@ -1,3 +1,3 @@
-• **Vesper Theme and Typography Engine:** Introduced sleek Vesper theme as the new default palette with selectable font families (Inter default, System UI, Google Sans).
-• **Standardized 800x650 Window and Responsive Scaling:** Calibrated default window to 800x650 with smooth shrinking down to 650x520 and standardized 3-column tool grid alignments.
-• **Universal Esc Dismissal and Vector Controls:** Added global Esc key filter to immediately dismiss any message box or dialog across all tools, plus crisp SVG dropdown arrows and checkmarks.
+• **E/Bills Downloader Crash Fix:** Resolved crash when processing bills caused by PyMuPDF 2.0 ONNX layout model lookup (missing layout_rf2.4.1+imf1.yaml resource).
+• **Dependency & Build Stabilization:** Pinned PyMuPDF to <2.0.0 and actively excluded unused ONNX layout models from PyInstaller builds to keep binary lightweight and fast.
+• **Resilient PDF Formatting:** Isolated A4 scaling and Sr. No. stamping to prevent individual PDF formatting issues from halting multi-account batch downloads.

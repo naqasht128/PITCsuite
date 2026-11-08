@@ -180,27 +180,49 @@ FONT_SIZES = {
 }
 
 
+_ACTIVE_THEME_KEY = None
+_ACTIVE_ACCENT_KEY = None
+_ACTIVE_FONT_FAMILY_KEY = None
+_ACTIVE_FONT_SIZE_KEY = None
+_ACTIVE_DENSITY_KEY = None
+
+
 def get_current_theme_key() -> str:
+    global _ACTIVE_THEME_KEY
+    if _ACTIVE_THEME_KEY is not None:
+        return _ACTIVE_THEME_KEY
     settings = QSettings("TNDevelopers", "PITCSuite")
     return str(settings.value("theme", "vesper")).lower()
 
 
 def get_current_accent_key() -> str:
+    global _ACTIVE_ACCENT_KEY
+    if _ACTIVE_ACCENT_KEY is not None:
+        return _ACTIVE_ACCENT_KEY
     settings = QSettings("TNDevelopers", "PITCSuite")
     return str(settings.value("accent_color", "red")).lower()
 
 
 def get_current_font_family_key() -> str:
+    global _ACTIVE_FONT_FAMILY_KEY
+    if _ACTIVE_FONT_FAMILY_KEY is not None:
+        return _ACTIVE_FONT_FAMILY_KEY
     settings = QSettings("TNDevelopers", "PITCSuite")
     return str(settings.value("font_family", "inter")).lower()
 
 
 def get_current_font_size_key() -> str:
+    global _ACTIVE_FONT_SIZE_KEY
+    if _ACTIVE_FONT_SIZE_KEY is not None:
+        return _ACTIVE_FONT_SIZE_KEY
     settings = QSettings("TNDevelopers", "PITCSuite")
     return str(settings.value("ui_scale", "compact")).lower()
 
 
 def get_current_density_key() -> str:
+    global _ACTIVE_DENSITY_KEY
+    if _ACTIVE_DENSITY_KEY is not None:
+        return _ACTIVE_DENSITY_KEY
     settings = QSettings("TNDevelopers", "PITCSuite")
     return str(settings.value("density", "compact")).lower()
 
@@ -262,6 +284,17 @@ QFrame[frameShape="4"], QFrame[frameShape="5"] {{
     background-color: {palette_data['divider']};
     height: 1px;
     max-height: 1px;
+}}
+
+QWidget#navSidebar QFrame[frameShape="4"], QWidget#navSidebar QFrame[frameShape="5"] {{
+    background-color: {palette_data['nav_border']};
+}}
+
+/* Status line across all tools (black on light UI, white on dark UI) */
+QLabel#statusLabel, QLabel[role="status"] {{
+    color: {"#000000" if is_light else "#ffffff"};
+    font-size: {font_pt}pt;
+    font-weight: 500;
 }}
 
 /* Containers / GroupBoxes */
@@ -736,6 +769,17 @@ QPushButton:disabled {
 """
 
 
+def get_status_color(theme_key=None) -> str:
+    if theme_key is None:
+        theme_key = get_current_theme_key()
+    return "#000000" if theme_key == "light" else "#ffffff"
+
+
+def get_status_style(theme_key=None) -> str:
+    c = get_status_color(theme_key)
+    return f"color: {c}; font-size: 8.5pt; font-weight: 500;"
+
+
 def get_nav_style(accent_key=None, theme_key=None) -> str:
     if accent_key is None:
         accent_key = get_current_accent_key()
@@ -743,11 +787,18 @@ def get_nav_style(accent_key=None, theme_key=None) -> str:
         theme_key = get_current_theme_key()
     accent = ACCENTS.get(accent_key, ACCENTS["blue"])
     palette_data = THEMES.get(theme_key, THEMES["dark"])
-    
+    is_light = (theme_key == "light")
+
+    text_unselected = "#1e293b" if is_light else palette_data['text_muted']
+    text_hover = "#000000" if is_light else palette_data['text_main']
+    text_active = "#000000" if is_light else palette_data['text_main']
+    bg_hover = "#dce1e8" if is_light else palette_data['item_hover']
+    bg_active = "#ffffff" if is_light else palette_data['card_bg']
+
     return f"""
 QPushButton {{
     background: transparent;
-    color: {palette_data['text_muted']};
+    color: {text_unselected};
     border: none;
     border-left: 2px solid transparent;
     border-radius: 0px;
@@ -758,12 +809,12 @@ QPushButton {{
     margin: 1px 0px;
 }}
 QPushButton:hover {{
-    background: {palette_data['item_hover']};
-    color: {palette_data['text_main']};
+    background: {bg_hover};
+    color: {text_hover};
 }}
 QPushButton[active="true"] {{
-    background: {palette_data['card_bg']};
-    color: {palette_data['text_main']};
+    background: {bg_active};
+    color: {text_active};
     border-left: 2px solid {accent['hex']};
     font-weight: 600;
 }}
@@ -833,12 +884,15 @@ def configure_app(app, theme_key=None, accent_key=None, font_size_key=None, dens
     font_pt = FONT_SIZES.get(font_size_key, 8.0)
     font_info = FONTS.get(font_family_key, FONTS["inter"])
 
-    app.setStyle("Fusion")
+    cur_style = app.style()
+    if not cur_style or cur_style.objectName().lower() != "fusion":
+        app.setStyle("Fusion")
 
     font = app.font()
-    font.setFamily(font_info["qt_family"])
-    font.setPointSizeF(font_pt)
-    app.setFont(font)
+    if font.family() != font_info["qt_family"] or abs(font.pointSizeF() - font_pt) > 0.01:
+        font.setFamily(font_info["qt_family"])
+        font.setPointSizeF(font_pt)
+        app.setFont(font)
 
     palette = QPalette()
     colors = {
@@ -868,15 +922,30 @@ def configure_app(app, theme_key=None, accent_key=None, font_size_key=None, dens
 
 def apply_theme(app, theme_key=None, accent_key=None, font_size_key=None, density=None, font_family_key=None):
     """Dynamically applies the chosen theme and re-styles the entire application in real time."""
-    if theme_key is None:
+    global _ACTIVE_THEME_KEY, _ACTIVE_ACCENT_KEY, _ACTIVE_FONT_FAMILY_KEY, _ACTIVE_FONT_SIZE_KEY, _ACTIVE_DENSITY_KEY
+    if theme_key is not None:
+        _ACTIVE_THEME_KEY = theme_key
+    else:
         theme_key = get_current_theme_key()
-    if accent_key is None:
+
+    if accent_key is not None:
+        _ACTIVE_ACCENT_KEY = accent_key
+    else:
         accent_key = get_current_accent_key()
-    if font_size_key is None:
+
+    if font_size_key is not None:
+        _ACTIVE_FONT_SIZE_KEY = font_size_key
+    else:
         font_size_key = get_current_font_size_key()
-    if density is None:
+
+    if density is not None:
+        _ACTIVE_DENSITY_KEY = density
+    else:
         density = get_current_density_key()
-    if font_family_key is None:
+
+    if font_family_key is not None:
+        _ACTIVE_FONT_FAMILY_KEY = font_family_key
+    else:
         font_family_key = get_current_font_family_key()
 
     configure_app(app, theme_key, accent_key, font_size_key, density, font_family_key)
@@ -932,41 +1001,50 @@ class NotificationDialog(QDialog):
         self.setMaximumWidth(620)
         self.setMaximumHeight(520)
 
-        self.setStyleSheet("""
-            QDialog {
-                background: #1e222a;
-                color: #edf0f5;
-                font-family: 'Segoe UI', Tahoma, sans-serif;
-            }
-            QPushButton {
-                background: #334155;
-                color: #edf0f5;
+        theme_key = get_current_theme_key()
+        accent_key = get_current_accent_key()
+        palette_data = THEMES.get(theme_key, THEMES["vesper"])
+        accent = ACCENTS.get(accent_key, ACCENTS["red"])
+        font_info = FONTS.get(get_current_font_family_key(), FONTS["inter"])
+        font_family = font_info["family"]
+
+        self.setStyleSheet(f"""
+            QDialog {{
+                background: {palette_data['window_bg']};
+                color: {palette_data['text_main']};
+                font-family: {font_family};
+            }}
+            QPushButton {{
+                background: {palette_data['input_bg']};
+                color: {palette_data['text_main']};
                 font-size: 9pt;
                 font-weight: 500;
                 padding: 6px 16px;
-                border-radius: 5px;
-                border: 1px solid #475569;
-            }
-            QPushButton:hover {
-                background: #475569;
+                border-radius: 4px;
+                border: 1px solid {palette_data['border']};
+            }}
+            QPushButton:hover {{
+                background: {palette_data['card_border']};
+                border-color: {palette_data['border_hover']};
+                color: {palette_data['text_main']};
+            }}
+            QPushButton:pressed {{
+                background: {palette_data['card_bg']};
+            }}
+            QPushButton#ok_btn {{
+                background: {accent['hex']};
                 color: #ffffff;
-            }
-            QPushButton:pressed {
-                background: #1e293b;
-            }
-            QPushButton#ok_btn {
-                background: #347bd1;
-                color: #ffffff;
-                border: 1px solid #4a90e2;
+                border: 1px solid {accent['hex']};
                 font-weight: 600;
                 min-width: 75px;
-            }
-            QPushButton#ok_btn:hover {
-                background: #4188de;
-            }
-            QPushButton#ok_btn:pressed {
-                background: #2b6cb8;
-            }
+            }}
+            QPushButton#ok_btn:hover {{
+                background: {accent['hover']};
+                border-color: {accent['hover']};
+            }}
+            QPushButton#ok_btn:pressed {{
+                background: {accent['pressed']};
+            }}
         """)
 
         # Separate summary from details if not explicitly passed
@@ -1003,7 +1081,7 @@ class NotificationDialog(QDialog):
         summary_lbl = QLabel(summary.strip())
         summary_lbl.setWordWrap(True)
         summary_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        summary_lbl.setStyleSheet("color: #edf0f5; font-size: 10pt; font-weight: 500; line-height: 1.4;")
+        summary_lbl.setStyleSheet(f"color: {palette_data['text_main']}; font-size: 10pt; font-weight: 500; line-height: 1.4;")
         header_layout.addWidget(summary_lbl, 1)
         layout.addLayout(header_layout)
 
@@ -1014,16 +1092,16 @@ class NotificationDialog(QDialog):
             details_edit.setPlainText(details.strip())
             details_edit.setMinimumHeight(110)
             details_edit.setMaximumHeight(260)
-            details_edit.setStyleSheet("""
-                QTextEdit {
-                    background-color: #161a21;
-                    color: #edf0f5;
-                    border: 1px solid #374151;
+            details_edit.setStyleSheet(f"""
+                QTextEdit {{
+                    background-color: {palette_data['card_bg']};
+                    color: {palette_data['text_sec']};
+                    border: 1px solid {palette_data['border']};
                     border-radius: 6px;
                     padding: 8px;
                     font-family: Consolas, 'Segoe UI', monospace;
                     font-size: 9pt;
-                }
+                }}
             """)
             layout.addWidget(details_edit)
 

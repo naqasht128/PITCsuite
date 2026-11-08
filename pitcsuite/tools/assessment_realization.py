@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QMessageBox, QFrame
 )
 
-from pitcsuite.ui_helpers import START_BTN, STOP_BTN, hline, lbl, notify
+from pitcsuite.ui_helpers import START_BTN, STOP_BTN, hline, lbl, notify, get_status_style
 
 
 def parse_amount(val_str: Any) -> Any:
@@ -598,7 +598,7 @@ class AssessmentRealizationPanel(QWidget):
         layout.setSpacing(10)
 
         # Header Title and Description
-        layout.addWidget(lbl("Govt Assessment Realization", bold=True, color="#7eb8f7"))
+        layout.addWidget(lbl("Assessment Realization", bold=True, color="#7eb8f7"))
         layout.addWidget(lbl(
             "Import Assessment & Realization text report (.txt) for Government Departments and export structured Excel sheet.",
             color="#556"
@@ -618,7 +618,7 @@ class AssessmentRealizationPanel(QWidget):
         self.file_ed.setPlaceholderText("Select Assessment & Realization text file...")
         form.addWidget(self.file_ed, 0, 1)
 
-        self.add_file_btn = QPushButton("📄 Add File")
+        self.add_file_btn = QPushButton("Add File")
         self.add_file_btn.clicked.connect(self._add_file)
         form.addWidget(self.add_file_btn, 0, 2)
 
@@ -628,7 +628,7 @@ class AssessmentRealizationPanel(QWidget):
         self.excel_ed.setPlaceholderText("Excel output path (auto-suggested on file selection)...")
         form.addWidget(self.excel_ed, 1, 1)
 
-        self.browse_excel_btn = QPushButton("📁 Browse...")
+        self.browse_excel_btn = QPushButton("Browse...")
         self.browse_excel_btn.clicked.connect(self._browse_excel)
         form.addWidget(self.browse_excel_btn, 1, 2)
 
@@ -649,12 +649,12 @@ class AssessmentRealizationPanel(QWidget):
         self.stop_btn.clicked.connect(self._stop)
         actions.addWidget(self.stop_btn)
 
-        self.open_excel_btn = QPushButton("📊 Open Excel")
+        self.open_excel_btn = QPushButton("Open Excel")
         self.open_excel_btn.setEnabled(False)
         self.open_excel_btn.clicked.connect(self._open_excel)
         actions.addWidget(self.open_excel_btn)
 
-        self.open_folder_btn = QPushButton("📂 Open Folder")
+        self.open_folder_btn = QPushButton("Open Folder")
         self.open_folder_btn.setEnabled(False)
         self.open_folder_btn.clicked.connect(self._open_folder)
         actions.addWidget(self.open_folder_btn)
@@ -664,7 +664,9 @@ class AssessmentRealizationPanel(QWidget):
 
         # Status & Progress
         self.status = QLabel("Status: Ready. Please select an Assessment Realization text file.")
-        self.status.setStyleSheet("color:#4a90d9;")
+        self.status.setObjectName("statusLabel")
+        self.status.setProperty("role", "status")
+        self.status.setStyleSheet(get_status_style())
         layout.addWidget(self.status)
 
         self.progress_bar = QProgressBar()

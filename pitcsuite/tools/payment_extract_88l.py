@@ -297,7 +297,7 @@ class PaymentExtract88LWorker(QThread):
 class PaymentExtract88LPanel(QWidget):
     def __init__(self):
         super().__init__(); self.worker = None; self._completion_shown = False
-        layout = QVBoxLayout(self); layout.setSpacing(10); layout.addWidget(lbl("88L Payment Extractor", bold=True, color="#7eb8f7")); layout.addWidget(hline())
+        layout = QVBoxLayout(self); layout.setSpacing(10); layout.addWidget(lbl("Payment from 88L", bold=True, color="#7eb8f7")); layout.addWidget(hline())
         
         group = QGroupBox("Inputs")
         form = QGridLayout(group)
@@ -349,7 +349,7 @@ class PaymentExtract88LPanel(QWidget):
         buttons.addWidget(self.start_btn)
         buttons.addWidget(self.stop_btn)
 
-        template = QPushButton("📥 Download Template")
+        template = QPushButton("Download Template")
         template.clicked.connect(self.get_template)
         buttons.addWidget(template)
 

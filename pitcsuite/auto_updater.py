@@ -480,7 +480,7 @@ class UpdateChecker(QThread):
 class UpdateAvailableDialog(QDialog):
     """
     Modern modal dialog shown when an update is available.
-    Displays version upgrade badge and comprehensive 2-3 line amendment bullets.
+    Synchronizes dynamically with active application theme palette and typography.
     """
     def __init__(self, current_ver: str, latest_ver: str, notes: List[str], parent=None):
         super().__init__(parent)
@@ -488,12 +488,25 @@ class UpdateAvailableDialog(QDialog):
         self.setFixedWidth(520)
         self.setModal(True)
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
-        self.setStyleSheet("""
-            QDialog {
-                background: #1e222a;
-                color: #edf0f5;
-                font-family: 'Segoe UI', Tahoma, sans-serif;
-            }
+
+        from pitcsuite.ui_helpers import (
+            get_current_theme_key, get_current_accent_key, get_current_font_family_key,
+            THEMES, ACCENTS, FONTS
+        )
+        theme_key = get_current_theme_key()
+        accent_key = get_current_accent_key()
+        palette_data = THEMES.get(theme_key, THEMES["vesper"])
+        accent = ACCENTS.get(accent_key, ACCENTS["blue"])
+        font_info = FONTS.get(get_current_font_family_key(), FONTS["inter"])
+        font_family = font_info["family"]
+        is_light = (theme_key == "light")
+
+        self.setStyleSheet(f"""
+            QDialog {{
+                background: {palette_data['window_bg']};
+                color: {palette_data['text_main']};
+                font-family: {font_family};
+            }}
         """)
 
         layout = QVBoxLayout(self)
@@ -503,16 +516,18 @@ class UpdateAvailableDialog(QDialog):
         # Header with icon and title
         header_layout = QHBoxLayout()
         header_layout.setSpacing(14)
-        
+
+        icon_bg = "#ecfdf5" if is_light else palette_data['card_bg']
+        icon_border = "#a7f3d0" if is_light else palette_data['card_border']
         icon_lbl = QLabel("🚀")
-        icon_lbl.setStyleSheet("""
-            QLabel {
+        icon_lbl.setStyleSheet(f"""
+            QLabel {{
                 font-size: 24pt;
-                background: #2a313d;
-                border: 1px solid #3b4252;
+                background: {icon_bg};
+                border: 1px solid {icon_border};
                 border-radius: 26px;
                 padding: 4px;
-            }
+            }}
         """)
         icon_lbl.setFixedSize(52, 52)
         icon_lbl.setAlignment(Qt.AlignCenter)
@@ -521,11 +536,11 @@ class UpdateAvailableDialog(QDialog):
         title_vbox = QVBoxLayout()
         title_vbox.setSpacing(4)
         title_lbl = QLabel("New Update Available")
-        title_lbl.setStyleSheet("color: #60a5fa; font-size: 13pt; font-weight: bold;")
+        title_lbl.setStyleSheet(f"color: {accent['hex']}; font-size: 13pt; font-weight: bold;")
         title_vbox.addWidget(title_lbl)
 
-        ver_badge = QLabel(f"Current: <span style='color: #94a3b8;'>{current_ver}</span> &nbsp;➔&nbsp; New: <b style='color: #4ade80;'>{latest_ver}</b>")
-        ver_badge.setStyleSheet("color: #cbd5e1; font-size: 9.5pt;")
+        ver_badge = QLabel(f"Current: <span style='color: {palette_data['text_muted']};'>{current_ver}</span> &nbsp;➔&nbsp; New: <b style='color: #10b981;'>{latest_ver}</b>")
+        ver_badge.setStyleSheet(f"color: {palette_data['text_sec']}; font-size: 9.5pt;")
         title_vbox.addWidget(ver_badge)
         header_layout.addLayout(title_vbox)
         header_layout.addStretch()
@@ -534,24 +549,24 @@ class UpdateAvailableDialog(QDialog):
         # Separator line
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("color: #334155; margin: 0;")
+        sep.setStyleSheet(f"background-color: {palette_data['divider']}; border: none; height: 1px; max-height: 1px; margin: 0;")
         layout.addWidget(sep)
 
         # What's New Section Box
         notes_box = QFrame()
-        notes_box.setStyleSheet("""
-            QFrame {
-                background: #252b36;
-                border: 1px solid #374151;
+        notes_box.setStyleSheet(f"""
+            QFrame {{
+                background: {palette_data['card_bg']};
+                border: 1px solid {palette_data['card_border']};
                 border-radius: 8px;
-            }
+            }}
         """)
         notes_layout = QVBoxLayout(notes_box)
         notes_layout.setContentsMargins(14, 12, 14, 12)
         notes_layout.setSpacing(10)
 
         whats_new_title = QLabel("✨ What's New in this Update / New Amendments:")
-        whats_new_title.setStyleSheet("color: #93c5fd; font-size: 9.5pt; font-weight: bold; border: none; background: transparent;")
+        whats_new_title.setStyleSheet(f"color: {accent['hex']}; font-size: 9.5pt; font-weight: bold; border: none; background: transparent;")
         notes_layout.addWidget(whats_new_title)
 
         if not notes:
@@ -563,13 +578,13 @@ class UpdateAvailableDialog(QDialog):
             bullet_row.setAlignment(Qt.AlignTop)
 
             bullet_dot = QLabel("•")
-            bullet_dot.setStyleSheet("color: #38bdf8; font-size: 11pt; font-weight: bold; border: none; background: transparent;")
+            bullet_dot.setStyleSheet(f"color: {accent['hex']}; font-size: 11pt; font-weight: bold; border: none; background: transparent;")
             bullet_dot.setFixedWidth(12)
             bullet_row.addWidget(bullet_dot)
 
             bullet_text = QLabel(item)
             bullet_text.setWordWrap(True)
-            bullet_text.setStyleSheet("color: #e2e8f0; font-size: 8.5pt; line-height: 1.4; border: none; background: transparent;")
+            bullet_text.setStyleSheet(f"color: {palette_data['text_main']}; font-size: 8.5pt; line-height: 1.4; border: none; background: transparent;")
             bullet_row.addWidget(bullet_text, 1)
 
             notes_layout.addLayout(bullet_row)
@@ -578,7 +593,7 @@ class UpdateAvailableDialog(QDialog):
 
         # Question prompt
         prompt_lbl = QLabel("Would you like to download and install this update now?")
-        prompt_lbl.setStyleSheet("color: #94a3b8; font-size: 8.5pt;")
+        prompt_lbl.setStyleSheet(f"color: {palette_data['text_sec']}; font-size: 8.5pt;")
         layout.addWidget(prompt_lbl)
 
         # Action Buttons
@@ -588,38 +603,41 @@ class UpdateAvailableDialog(QDialog):
 
         later_btn = QPushButton("Remind Me Later")
         later_btn.setCursor(Qt.PointingHandCursor)
-        later_btn.setStyleSheet("""
-            QPushButton {
-                background: #334155;
-                color: #cbd5e1;
-                font-size: 9pt;
-                padding: 8px 16px;
-                border-radius: 6px;
-                border: none;
-            }
-            QPushButton:hover {
-                background: #475569;
-                color: #ffffff;
-            }
+        later_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {palette_data['input_bg']};
+                color: {palette_data['text_main']};
+                font-size: 8.5pt;
+                padding: 7px 16px;
+                border-radius: 4px;
+                border: 1px solid {palette_data['border']};
+            }}
+            QPushButton:hover {{
+                background: {palette_data['card_border']};
+                border-color: {palette_data['border_hover']};
+            }}
         """)
         later_btn.clicked.connect(self.reject)
         btn_layout.addWidget(later_btn)
 
         update_btn = QPushButton("Download & Install Now")
         update_btn.setCursor(Qt.PointingHandCursor)
-        update_btn.setStyleSheet("""
-            QPushButton {
-                background: #16a34a;
+        update_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: #10b981;
                 color: #ffffff;
                 font-size: 9pt;
                 font-weight: bold;
-                padding: 8px 18px;
-                border-radius: 6px;
+                padding: 7px 18px;
+                border-radius: 4px;
                 border: none;
-            }
-            QPushButton:hover {
-                background: #15803d;
-            }
+            }}
+            QPushButton:hover {{
+                background: #059669;
+            }}
+            QPushButton:pressed {{
+                background: #047857;
+            }}
         """)
         update_btn.clicked.connect(self.accept)
         btn_layout.addWidget(update_btn)
@@ -631,19 +649,33 @@ class UpToDateDialog(QDialog):
     """
     Dialog displayed when the app is up to date, or on post-update first launch,
     showcasing the current version's amendment notes.
+    Fully synchronized with active application theme palette and typography.
     """
     def __init__(self, current_ver: str, notes: List[str], parent=None, title="PITC Suite - Up to Date", is_welcome=False):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.setFixedWidth(500)
+        self.setFixedWidth(520)
         self.setModal(True)
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
-        self.setStyleSheet("""
-            QDialog {
-                background: #1e222a;
-                color: #edf0f5;
-                font-family: 'Segoe UI', Tahoma, sans-serif;
-            }
+
+        from pitcsuite.ui_helpers import (
+            get_current_theme_key, get_current_accent_key, get_current_font_family_key,
+            THEMES, ACCENTS, FONTS
+        )
+        theme_key = get_current_theme_key()
+        accent_key = get_current_accent_key()
+        palette_data = THEMES.get(theme_key, THEMES["vesper"])
+        accent = ACCENTS.get(accent_key, ACCENTS["blue"])
+        font_info = FONTS.get(get_current_font_family_key(), FONTS["inter"])
+        font_family = font_info["family"]
+        is_light = (theme_key == "light")
+
+        self.setStyleSheet(f"""
+            QDialog {{
+                background: {palette_data['window_bg']};
+                color: {palette_data['text_main']};
+                font-family: {font_family};
+            }}
         """)
 
         layout = QVBoxLayout(self)
@@ -653,15 +685,16 @@ class UpToDateDialog(QDialog):
         # Header
         header_layout = QHBoxLayout()
         header_layout.setSpacing(14)
-        
+
         icon_char = "🎉" if is_welcome else "✅"
-        icon_bg = "#1f3a2f" if is_welcome else "#1c352d"
+        icon_bg = "#ecfdf5" if is_light else "#142e23"
+        icon_border = "#a7f3d0" if is_light else "#2ea043"
         icon_lbl = QLabel(icon_char)
         icon_lbl.setStyleSheet(f"""
             QLabel {{
                 font-size: 24pt;
                 background: {icon_bg};
-                border: 1px solid #334155;
+                border: 1px solid {icon_border};
                 border-radius: 26px;
                 padding: 4px;
             }}
@@ -673,13 +706,14 @@ class UpToDateDialog(QDialog):
         title_vbox = QVBoxLayout()
         title_vbox.setSpacing(4)
         header_title = f"Successfully Updated to {current_ver}" if is_welcome else "You are Running the Latest Version"
+        title_color = "#059669" if is_light else "#4ade80"
         title_lbl = QLabel(header_title)
-        title_lbl.setStyleSheet("color: #4ade80; font-size: 12pt; font-weight: bold;")
+        title_lbl.setStyleSheet(f"color: {title_color}; font-size: 12pt; font-weight: bold;")
         title_vbox.addWidget(title_lbl)
 
         sub_msg = "Here are the new amendments and improvements in this release:" if is_welcome else f"Version <b>{current_ver}</b> is the current release."
         ver_lbl = QLabel(sub_msg)
-        ver_lbl.setStyleSheet("color: #94a3b8; font-size: 9pt;")
+        ver_lbl.setStyleSheet(f"color: {palette_data['text_muted']}; font-size: 9pt;")
         title_vbox.addWidget(ver_lbl)
         header_layout.addLayout(title_vbox)
         header_layout.addStretch()
@@ -688,17 +722,17 @@ class UpToDateDialog(QDialog):
         # Separator line
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("color: #334155; margin: 0;")
+        sep.setStyleSheet(f"background-color: {palette_data['divider']}; border: none; height: 1px; max-height: 1px; margin: 0;")
         layout.addWidget(sep)
 
         # What's New in this Version box
         notes_box = QFrame()
-        notes_box.setStyleSheet("""
-            QFrame {
-                background: #252b36;
-                border: 1px solid #374151;
+        notes_box.setStyleSheet(f"""
+            QFrame {{
+                background: {palette_data['card_bg']};
+                border: 1px solid {palette_data['card_border']};
                 border-radius: 8px;
-            }
+            }}
         """)
         notes_layout = QVBoxLayout(notes_box)
         notes_layout.setContentsMargins(14, 12, 14, 12)
@@ -706,7 +740,7 @@ class UpToDateDialog(QDialog):
 
         section_title = f"✨ What's New in {current_ver}:"
         whats_new_title = QLabel(section_title)
-        whats_new_title.setStyleSheet("color: #93c5fd; font-size: 9.5pt; font-weight: bold; border: none; background: transparent;")
+        whats_new_title.setStyleSheet(f"color: {accent['hex']}; font-size: 9.5pt; font-weight: bold; border: none; background: transparent;")
         notes_layout.addWidget(whats_new_title)
 
         if not notes:
@@ -718,13 +752,13 @@ class UpToDateDialog(QDialog):
             bullet_row.setAlignment(Qt.AlignTop)
 
             bullet_dot = QLabel("•")
-            bullet_dot.setStyleSheet("color: #38bdf8; font-size: 11pt; font-weight: bold; border: none; background: transparent;")
+            bullet_dot.setStyleSheet(f"color: {accent['hex']}; font-size: 11pt; font-weight: bold; border: none; background: transparent;")
             bullet_dot.setFixedWidth(12)
             bullet_row.addWidget(bullet_dot)
 
             bullet_text = QLabel(item)
             bullet_text.setWordWrap(True)
-            bullet_text.setStyleSheet("color: #e2e8f0; font-size: 8.5pt; line-height: 1.4; border: none; background: transparent;")
+            bullet_text.setStyleSheet(f"color: {palette_data['text_main']}; font-size: 8.5pt; line-height: 1.4; border: none; background: transparent;")
             bullet_row.addWidget(bullet_text, 1)
 
             notes_layout.addLayout(bullet_row)
@@ -736,19 +770,22 @@ class UpToDateDialog(QDialog):
         btn_layout.addStretch()
         ok_btn = QPushButton("Got it" if is_welcome else "OK")
         ok_btn.setCursor(Qt.PointingHandCursor)
-        ok_btn.setStyleSheet("""
-            QPushButton {
-                background: #334155;
-                color: #e2e8f0;
-                font-size: 9pt;
-                padding: 7px 22px;
-                border-radius: 6px;
-                border: none;
-            }
-            QPushButton:hover {
-                background: #475569;
+        ok_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {accent['hex']};
                 color: #ffffff;
-            }
+                font-size: 8.5pt;
+                font-weight: 600;
+                padding: 7px 22px;
+                border-radius: 4px;
+                border: none;
+            }}
+            QPushButton:hover {{
+                background: {accent['hover']};
+            }}
+            QPushButton:pressed {{
+                background: {accent['pressed']};
+            }}
         """)
         ok_btn.clicked.connect(self.accept)
         btn_layout.addWidget(ok_btn)
@@ -801,11 +838,7 @@ def check_for_updates(parent_window, silent=False):
 class UpdateDownloadDialog(QDialog):
     """
     Dedicated modal dialog displaying live download progress and applying the update.
-    Matches Bill Scrapper's UpdateDialog architecture:
-    - Vibrant green progress bar with smooth percentage text
-    - Dual status labels: activity ('Downloading update package...') and statistics ('45% (61.5 MB / 136.9 MB)')
-    - Automatic fallback size estimation so progress bar NEVER gets stuck at 0%
-    - Detached silent installation with multi-tier process termination and seamless relaunch
+    Synchronized with active theme palette and typography.
     """
     def __init__(self, version_tag: str = "", file_size: int = 0, parent=None):
         super().__init__(parent)
@@ -814,17 +847,28 @@ class UpdateDownloadDialog(QDialog):
         self.is_cancelled = False
         self.downloader: Optional[DownloadThread] = None
 
+        from pitcsuite.ui_helpers import (
+            get_current_theme_key, get_current_accent_key, get_current_font_family_key,
+            THEMES, ACCENTS, FONTS
+        )
+        theme_key = get_current_theme_key()
+        accent_key = get_current_accent_key()
+        palette_data = THEMES.get(theme_key, THEMES["vesper"])
+        accent = ACCENTS.get(accent_key, ACCENTS["blue"])
+        font_info = FONTS.get(get_current_font_family_key(), FONTS["inter"])
+        font_family = font_info["family"]
+
         ver_str = f" ({version_tag})" if version_tag else ""
         self.setWindowTitle(f"Updating PITC Suite{ver_str}")
         self.setFixedWidth(460)
         self.setModal(True)
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
-        self.setStyleSheet("""
-            QDialog {
-                background: #1e222a;
-                color: #edf0f5;
-                font-family: 'Segoe UI', Tahoma, sans-serif;
-            }
+        self.setStyleSheet(f"""
+            QDialog {{
+                background: {palette_data['window_bg']};
+                color: {palette_data['text_main']};
+                font-family: {font_family};
+            }}
         """)
 
         layout = QVBoxLayout(self)
@@ -834,34 +878,34 @@ class UpdateDownloadDialog(QDialog):
         # Header Title
         title_text = f"Downloading Update{ver_str}..."
         self.lbl_title = QLabel(title_text)
-        self.lbl_title.setStyleSheet("color: #60a5fa; font-size: 11pt; font-weight: bold;")
+        self.lbl_title.setStyleSheet(f"color: {accent['hex']}; font-size: 11pt; font-weight: bold;")
         layout.addWidget(self.lbl_title)
 
         # Status Label
         self.lbl_status = QLabel("Connecting to update server...")
-        self.lbl_status.setStyleSheet("color: #cbd5e1; font-size: 9pt;")
+        self.lbl_status.setStyleSheet(f"color: {palette_data['text_sec']}; font-size: 9pt;")
         layout.addWidget(self.lbl_status)
 
-        # Styled Green Progress Bar (matching Bill Scrapper)
+        # Styled Green Progress Bar
         self.bar = QProgressBar()
         self.bar.setRange(0, 100)
         self.bar.setValue(0)
         self.bar.setFixedHeight(20)
         self.bar.setTextVisible(True)
-        self.bar.setStyleSheet("""
-            QProgressBar {
-                background-color: #161a21;
-                border: 1px solid #374151;
-                border-radius: 5px;
+        self.bar.setStyleSheet(f"""
+            QProgressBar {{
+                background-color: {palette_data['card_bg']};
+                border: 1px solid {palette_data['card_border']};
+                border-radius: 4px;
                 text-align: center;
                 color: #ffffff;
                 font-size: 8.5pt;
                 font-weight: bold;
-            }
-            QProgressBar::chunk {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #16a34a, stop:1 #22c55e);
-                border-radius: 4px;
-            }
+            }}
+            QProgressBar::chunk {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #10b981, stop:1 #059669);
+                border-radius: 3px;
+            }}
         """)
         layout.addWidget(self.bar)
 
@@ -869,7 +913,7 @@ class UpdateDownloadDialog(QDialog):
         init_mb = (self.total_size / (1024 * 1024)) if self.total_size > 0 else 0.0
         details_init = f"0% (0.0 MB / {init_mb:.1f} MB)" if init_mb > 0 else "0% (0.0 MB)"
         self.lbl_details = QLabel(details_init)
-        self.lbl_details.setStyleSheet("color: #94a3b8; font-size: 8.5pt;")
+        self.lbl_details.setStyleSheet(f"color: {palette_data['text_muted']}; font-size: 8.5pt;")
         layout.addWidget(self.lbl_details)
 
         # Bottom Button Row
@@ -878,23 +922,23 @@ class UpdateDownloadDialog(QDialog):
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setCursor(Qt.PointingHandCursor)
-        self.cancel_btn.setStyleSheet("""
-            QPushButton {
-                background: #334155;
-                color: #cbd5e1;
-                font-size: 9pt;
+        self.cancel_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {palette_data['input_bg']};
+                color: {palette_data['text_main']};
+                font-size: 8.5pt;
                 padding: 6px 16px;
-                border-radius: 5px;
-                border: none;
-            }
-            QPushButton:hover {
-                background: #475569;
-                color: #ffffff;
-            }
-            QPushButton:disabled {
-                background: #252b36;
-                color: #64748b;
-            }
+                border-radius: 4px;
+                border: 1px solid {palette_data['border']};
+            }}
+            QPushButton:hover {{
+                background: {palette_data['card_border']};
+                border-color: {palette_data['border_hover']};
+            }}
+            QPushButton:disabled {{
+                background: {palette_data['card_bg']};
+                color: {palette_data['text_muted']};
+            }}
         """)
         self.cancel_btn.clicked.connect(self.on_cancel)
         btn_layout.addWidget(self.cancel_btn)

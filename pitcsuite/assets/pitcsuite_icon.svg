@@ -1,1 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/><rect x="3" y="3" width="18" height="18" rx="2" ry="2" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="2 2"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    <linearGradient id="boltGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#334155" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+  </defs>
+  <!-- Dark Roundish Background (Squircle) -->
+  <rect x="8" y="8" width="240" height="240" rx="54" ry="54" fill="url(#bgGrad)" stroke="url(#borderGrad)" stroke-width="4" />
+  <!-- Circuit tech frame -->
+  <rect x="36" y="36" width="184" height="184" rx="28" ry="28" fill="none" stroke="#0284c7" stroke-width="3" stroke-dasharray="12 6" opacity="0.5" />
+  <!-- Circuit node dots -->
+  <circle cx="36" cy="128" r="4.5" fill="#38bdf8" />
+  <circle cx="220" cy="128" r="4.5" fill="#38bdf8" />
+  <circle cx="128" cy="36" r="4.5" fill="#38bdf8" />
+  <circle cx="128" cy="220" r="4.5" fill="#38bdf8" />
+  <!-- Lightning bolt symbol -->
+  <path d="M140 50 L78 142 L130 142 L116 206 L182 114 L130 114 Z" fill="url(#boltGrad)" stroke="#7dd3fc" stroke-width="3" stroke-linejoin="round" />
+</svg>

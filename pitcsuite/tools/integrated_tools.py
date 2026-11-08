@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from pitcsuite.templates import download_template
-from pitcsuite.ui_helpers import START_BTN, STOP_BTN, hline, lbl, notify
+from pitcsuite.ui_helpers import START_BTN, STOP_BTN, hline, lbl, notify, get_status_style
 from pitcsuite.config import config_path as _config_path
 
 
@@ -41,7 +41,7 @@ class CP22TCheckerPanel(QWidget):
         self.worker = None
         self.pdf_paths = []
         layout = QVBoxLayout(self); layout.setSpacing(10)
-        layout.addWidget(lbl("CP22T Posting Checker", bold=True, color="#7eb8f7"))
+        layout.addWidget(lbl("CP 22T Posting", bold=True, color="#7eb8f7"))
         layout.addWidget(lbl("Match CP22T PDF transaction records against an optional Excel list.", color="#556"))
         layout.addWidget(hline())
 
@@ -64,7 +64,7 @@ class CP22TCheckerPanel(QWidget):
         self.start_btn = QPushButton("▶  START"); self.start_btn.setStyleSheet(START_BTN); self.start_btn.clicked.connect(self._start)
         self.stop_btn = QPushButton("■  STOP"); self.stop_btn.setStyleSheet(STOP_BTN); self.stop_btn.setEnabled(False); self.stop_btn.clicked.connect(self._stop)
         actions.addWidget(self.start_btn); actions.addWidget(self.stop_btn); actions.addStretch(); layout.addLayout(actions)
-        self.status = QLabel("Status: Idle"); self.status.setStyleSheet("color:#4a90d9;"); layout.addWidget(self.status)
+        self.status = QLabel("Status: Idle"); self.status.setObjectName("statusLabel"); self.status.setProperty("role", "status"); self.status.setStyleSheet(get_status_style()); layout.addWidget(self.status)
         self.log_box = QTextEdit(); self.log_box.setReadOnly(True); layout.addWidget(self.log_box)
 
     def _browse_excel(self):
@@ -141,7 +141,7 @@ class BillScraperPanel(QWidget):
         layout = QVBoxLayout(self); layout.setSpacing(10)
         layout.addWidget(lbl("PITC Bill Scrapper", bold=True, color="#7eb8f7"))
         layout.addWidget(lbl("Update an Excel workbook with live PITC bill details.", color="#556")); layout.addWidget(hline())
-        group = QGroupBox("Workbook & Source")
+        group = QGroupBox("Workbook and Source")
         form = QGridLayout(group)
         form.setHorizontalSpacing(10)
         form.setVerticalSpacing(8)
@@ -188,7 +188,7 @@ class BillScraperPanel(QWidget):
         actions = QHBoxLayout(); self.start_btn = QPushButton("▶  START"); self.start_btn.setStyleSheet(START_BTN); self.start_btn.clicked.connect(self._start)
         self.stop_btn = QPushButton("■  STOP"); self.stop_btn.setStyleSheet(STOP_BTN); self.stop_btn.setEnabled(False); self.stop_btn.clicked.connect(self._stop)
         actions.addWidget(self.start_btn); actions.addWidget(self.stop_btn); actions.addStretch(); layout.addLayout(actions)
-        self.progress = QLabel("Fetched: 0"); layout.addWidget(self.progress)
+        self.progress = QLabel("Fetched: 0"); self.progress.setObjectName("statusLabel"); self.progress.setProperty("role", "status"); self.progress.setStyleSheet(get_status_style()); layout.addWidget(self.progress)
         self.progress_bar = QProgressBar(); self.progress_bar.setRange(0, 1); self.progress_bar.setValue(0)
         layout.addWidget(self.progress_bar)
         self.log_box = QTextEdit(); self.log_box.setReadOnly(True); layout.addWidget(self.log_box)
@@ -522,7 +522,9 @@ class FileMoverPanel(QWidget):
         act_row.addStretch()
         layout.addLayout(act_row)
         self.status = QLabel("Status: Idle")
-        self.status.setStyleSheet("color:#4a90d9;")
+        self.status.setObjectName("statusLabel")
+        self.status.setProperty("role", "status")
+        self.status.setStyleSheet(get_status_style())
         layout.addWidget(self.status)
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
@@ -628,17 +630,17 @@ class CP52PostingCheckerPanel(QWidget):
         self.start_btn.clicked.connect(self._start)
         actions.addWidget(self.start_btn)
 
-        template_btn = QPushButton("📥 Template")
+        template_btn = QPushButton("Template")
         template_btn.clicked.connect(self._download_template)
         actions.addWidget(template_btn)
 
-        open_btn = QPushButton("📂 Open Folder")
+        open_btn = QPushButton("Open Folder")
         open_btn.clicked.connect(self._open_output)
         actions.addWidget(open_btn)
 
         actions.addStretch()
         layout.addLayout(actions)
-        self.status = QLabel("Status: Ready"); self.status.setStyleSheet("color:#4a90d9;"); layout.addWidget(self.status)
+        self.status = QLabel("Status: Ready"); self.status.setObjectName("statusLabel"); self.status.setProperty("role", "status"); self.status.setStyleSheet(get_status_style()); layout.addWidget(self.status)
         self.log_box = QTextEdit(); self.log_box.setReadOnly(True); layout.addWidget(self.log_box)
 
     def _browse(self, edit, kind):
@@ -721,7 +723,7 @@ class CP136PostingCheckerPanel(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
-        layout.addWidget(lbl("CP 136 & 137 Posting Checker", bold=True, color="#7eb8f7"))
+        layout.addWidget(lbl("CP 136/137 Posting", bold=True, color="#7eb8f7"))
         layout.addWidget(lbl("Extract 14-figure Ref Nos, single postings, and field modifications from WAPDA RCP-136 & CP-137 reports into structured Excel.", color="#556"))
         layout.addWidget(hline())
 
@@ -736,26 +738,26 @@ class CP136PostingCheckerPanel(QWidget):
         btn_grid = QGridLayout()
         btn_grid.setHorizontalSpacing(8)
         btn_grid.setVerticalSpacing(6)
-        add_files_btn = QPushButton("📄 Add File(s)")
+        add_files_btn = QPushButton("Add File(s)")
         add_files_btn.clicked.connect(self._add_files)
         btn_grid.addWidget(add_files_btn, 0, 0)
 
-        add_dir_btn = QPushButton("📁 Add Folder")
+        add_dir_btn = QPushButton("Add Folder")
         add_dir_btn.clicked.connect(self._add_folder)
         btn_grid.addWidget(add_dir_btn, 0, 1)
 
-        remove_btn = QPushButton("✖ Remove Selected")
+        remove_btn = QPushButton("Remove Selected")
         remove_btn.clicked.connect(self._remove_selected)
         btn_grid.addWidget(remove_btn, 1, 0)
 
-        clear_btn = QPushButton("🗑 Clear All")
+        clear_btn = QPushButton("Clear All")
         clear_btn.clicked.connect(self._clear_files)
         btn_grid.addWidget(clear_btn, 1, 1)
         form_in.addLayout(btn_grid)
         layout.addWidget(group_in)
 
         # Output & Settings Group
-        group_out = QGroupBox("Output & Deduplication Settings")
+        group_out = QGroupBox("Output Settings")
         form_out = QVBoxLayout(group_out)
 
         out_grid = QGridLayout()
@@ -766,11 +768,11 @@ class CP136PostingCheckerPanel(QWidget):
         self.out_ed.setPlaceholderText("Auto-generated alongside source files if left blank")
         out_grid.addWidget(self.out_ed, 0, 1)
 
-        browse_file_btn = QPushButton("📄 File...")
+        browse_file_btn = QPushButton("File...")
         browse_file_btn.clicked.connect(self._browse_file)
         out_grid.addWidget(browse_file_btn, 0, 2)
 
-        browse_folder_btn = QPushButton("📁 Folder...")
+        browse_folder_btn = QPushButton("Folder...")
         browse_folder_btn.clicked.connect(self._browse_folder)
         out_grid.addWidget(browse_folder_btn, 0, 3)
         out_grid.setColumnStretch(1, 1)
@@ -824,12 +826,12 @@ class CP136PostingCheckerPanel(QWidget):
         self.stop_btn.clicked.connect(self._stop)
         actions.addWidget(self.stop_btn)
 
-        self.open_excel_btn = QPushButton("📊 Open Excel")
+        self.open_excel_btn = QPushButton("Open Excel")
         self.open_excel_btn.setEnabled(False)
         self.open_excel_btn.clicked.connect(self._open_excel)
         actions.addWidget(self.open_excel_btn)
 
-        self.open_folder_btn = QPushButton("📂 Open Folder")
+        self.open_folder_btn = QPushButton("Open Folder")
         self.open_folder_btn.setEnabled(False)
         self.open_folder_btn.clicked.connect(self._open_folder)
         actions.addWidget(self.open_folder_btn)
@@ -838,7 +840,9 @@ class CP136PostingCheckerPanel(QWidget):
         layout.addLayout(actions)
 
         self.status = QLabel("Status: Ready. Add CP-136 / CP-137 file(s) or folder to begin.")
-        self.status.setStyleSheet("color:#4a90d9;")
+        self.status.setObjectName("statusLabel")
+        self.status.setProperty("role", "status")
+        self.status.setStyleSheet(get_status_style())
         layout.addWidget(self.status)
 
         self.log_box = QTextEdit()
@@ -1053,7 +1057,9 @@ class CP21cConverterPanel(QWidget):
         layout.addLayout(actions)
 
         self.status = QLabel("Status: Ready")
-        self.status.setStyleSheet("color:#4a90d9;")
+        self.status.setObjectName("statusLabel")
+        self.status.setProperty("role", "status")
+        self.status.setStyleSheet(get_status_style())
         layout.addWidget(self.status)
         
         self.progress_bar = QProgressBar()

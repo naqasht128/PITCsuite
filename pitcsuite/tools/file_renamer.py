@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QPushButton, QTextEdit, QVBoxLayout, QWidget,
 )
 
-from pitcsuite.ui_helpers import START_BTN, hline, lbl, notify
+from pitcsuite.ui_helpers import START_BTN, hline, lbl, notify, get_status_style
 
 
 def _cell_text(value):
@@ -191,7 +191,9 @@ class FileRenamerPanel(QWidget):
         layout.addLayout(act_row)
 
         self.status = QLabel("Status: Idle")
-        self.status.setStyleSheet("color:#4a90d9;")
+        self.status.setObjectName("statusLabel")
+        self.status.setProperty("role", "status")
+        self.status.setStyleSheet(get_status_style())
         layout.addWidget(self.status)
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)

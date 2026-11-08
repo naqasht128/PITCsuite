@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal, QObject, QThread
 
-from pitcsuite.ui_helpers import lbl, hline, START_BTN, STOP_BTN, notify
+from pitcsuite.ui_helpers import lbl, hline, START_BTN, STOP_BTN, notify, get_status_style
 from pitcsuite.templates import download_template
 from pitcsuite.config import config_path as _config_path
 
@@ -92,7 +92,7 @@ class SrNoCheckerPanel(QWidget):
         bh.addWidget(self.btn_start); bh.addWidget(self.btn_stop); bh.addStretch()
         layout.addLayout(bh)
 
-        self.status_lbl = QLabel("Status: Idle"); self.status_lbl.setStyleSheet("color:#4a90d9;")
+        self.status_lbl = QLabel("Status: Idle"); self.status_lbl.setObjectName("statusLabel"); self.status_lbl.setProperty("role", "status"); self.status_lbl.setStyleSheet(get_status_style())
         layout.addWidget(self.status_lbl)
 
     def _browse_excel(self):

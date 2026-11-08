@@ -29,7 +29,7 @@ from reportlab.pdfgen import canvas
 from pypdf import PdfReader, PdfWriter
 
 
-from pitcsuite.ui_helpers import START_BTN, STOP_BTN, hline, lbl, notify
+from pitcsuite.ui_helpers import START_BTN, STOP_BTN, hline, lbl, notify, get_status_style
 
 
 def _match_record_start(line_str: str) -> Optional[str]:
@@ -1131,7 +1131,7 @@ class CP139PostingCheckerPanel(QWidget):
         layout.setSpacing(10)
 
         # Header Title and Description
-        layout.addWidget(lbl("CP 139 Posting Check/PDF", bold=True, color="#7eb8f7"))
+        layout.addWidget(lbl("CP 139 Posting/PDF", bold=True, color="#7eb8f7"))
         layout.addWidget(lbl(
             "Extract Ref#, S/Div, Grand Total, match against Excel AC numbers, highlight records, and generate PDF pages.",
             color="#556"
@@ -1149,19 +1149,19 @@ class CP139PostingCheckerPanel(QWidget):
         btn_grid = QGridLayout()
         btn_grid.setHorizontalSpacing(8)
         btn_grid.setVerticalSpacing(6)
-        add_files_btn = QPushButton("📄 Add File(s)")
+        add_files_btn = QPushButton("Add File(s)")
         add_files_btn.clicked.connect(self._add_files)
         btn_grid.addWidget(add_files_btn, 0, 0)
 
-        add_dir_btn = QPushButton("📁 Add Folder")
+        add_dir_btn = QPushButton("Add Folder")
         add_dir_btn.clicked.connect(self._add_folder)
         btn_grid.addWidget(add_dir_btn, 0, 1)
 
-        remove_btn = QPushButton("✖ Remove Selected")
+        remove_btn = QPushButton("Remove Selected")
         remove_btn.clicked.connect(self._remove_selected)
         btn_grid.addWidget(remove_btn, 1, 0)
 
-        clear_btn = QPushButton("🗑 Clear All")
+        clear_btn = QPushButton("Clear All")
         clear_btn.clicked.connect(self._clear_files)
         btn_grid.addWidget(clear_btn, 1, 1)
         form_in.addLayout(btn_grid)
@@ -1179,7 +1179,7 @@ class CP139PostingCheckerPanel(QWidget):
         self.out_dir_ed.setPlaceholderText("Auto-generated alongside source files if left blank")
         out_grid.addWidget(self.out_dir_ed, 0, 1)
 
-        browse_folder_btn = QPushButton("📁 Browse Folder...")
+        browse_folder_btn = QPushButton("Browse Folder...")
         browse_folder_btn.clicked.connect(self._browse_folder)
         out_grid.addWidget(browse_folder_btn, 0, 2)
         out_grid.setColumnStretch(1, 1)
@@ -1233,7 +1233,7 @@ class CP139PostingCheckerPanel(QWidget):
         chk_grid.addWidget(self.make_pdf_chk, 0, 0)
 
         self.single_pdf_chk = QCheckBox("Single PDF")
-        self.single_pdf_chk.setChecked(True)
+        self.single_pdf_chk.setChecked(False)
         self.single_pdf_chk.setEnabled(False)
         self.single_pdf_chk.toggled.connect(self._on_single_pdf_toggled)
         chk_grid.addWidget(self.single_pdf_chk, 0, 1)
@@ -1245,7 +1245,7 @@ class CP139PostingCheckerPanel(QWidget):
         chk_grid.addWidget(self.separate_pdf_chk, 1, 0)
 
         self.stamp_para_chk = QCheckBox("Stamp Sr. No.")
-        self.stamp_para_chk.setChecked(True)
+        self.stamp_para_chk.setChecked(False)
         self.stamp_para_chk.setEnabled(False)
         chk_grid.addWidget(self.stamp_para_chk, 1, 1)
         form_pdf.addLayout(chk_grid)
@@ -1259,12 +1259,12 @@ class CP139PostingCheckerPanel(QWidget):
         self.excel_in_ed.setEnabled(False)
         excel_grid.addWidget(self.excel_in_ed, 0, 1)
 
-        self.browse_excel_btn = QPushButton("📄 Browse Excel...")
+        self.browse_excel_btn = QPushButton("Browse Excel...")
         self.browse_excel_btn.setEnabled(False)
         self.browse_excel_btn.clicked.connect(self._browse_excel)
         excel_grid.addWidget(self.browse_excel_btn, 0, 2)
 
-        self.download_tmpl_btn = QPushButton("📥 Template")
+        self.download_tmpl_btn = QPushButton("Template")
         self.download_tmpl_btn.setEnabled(False)
         self.download_tmpl_btn.clicked.connect(self._download_template)
         excel_grid.addWidget(self.download_tmpl_btn, 0, 3)
@@ -1293,7 +1293,9 @@ class CP139PostingCheckerPanel(QWidget):
         form_logs = QVBoxLayout(group_logs)
 
         self.status = QLabel("Status: Ready. Add CP-139 file(s) or folder to begin.")
-        self.status.setStyleSheet("color:#4a90d9;")
+        self.status.setObjectName("statusLabel")
+        self.status.setProperty("role", "status")
+        self.status.setStyleSheet(get_status_style())
         form_logs.addWidget(self.status)
 
         self.log_box = QTextEdit()
@@ -1310,9 +1312,6 @@ class CP139PostingCheckerPanel(QWidget):
             self.separate_pdf_chk.blockSignals(True)
             self.separate_pdf_chk.setChecked(False)
             self.separate_pdf_chk.blockSignals(False)
-            self.separate_pdf_chk.setEnabled(False)
-        else:
-            self.separate_pdf_chk.setEnabled(True)
 
     def _on_separate_pdf_toggled(self, checked: bool):
         if not self.make_pdf_chk.isChecked():
@@ -1321,28 +1320,34 @@ class CP139PostingCheckerPanel(QWidget):
             self.single_pdf_chk.blockSignals(True)
             self.single_pdf_chk.setChecked(False)
             self.single_pdf_chk.blockSignals(False)
-            self.single_pdf_chk.setEnabled(False)
-        else:
-            self.single_pdf_chk.setEnabled(True)
 
     def _on_make_pdf_toggled(self, checked: bool):
         self.stamp_para_chk.setEnabled(checked)
         self.excel_in_ed.setEnabled(checked)
         self.browse_excel_btn.setEnabled(checked)
         self.download_tmpl_btn.setEnabled(checked)
+        self.single_pdf_chk.setEnabled(checked)
+        self.separate_pdf_chk.setEnabled(checked)
 
         if checked:
-            if self.separate_pdf_chk.isChecked():
-                self.separate_pdf_chk.setEnabled(True)
-                self.single_pdf_chk.setEnabled(False)
-            else:
-                self.single_pdf_chk.setEnabled(True)
-                self.single_pdf_chk.setChecked(True)
-                self.separate_pdf_chk.setChecked(False)
-                self.separate_pdf_chk.setEnabled(False)
+            # Auto check Separate PDF, uncheck Single PDF; both remain enabled
+            self.separate_pdf_chk.blockSignals(True)
+            self.separate_pdf_chk.setChecked(True)
+            self.separate_pdf_chk.blockSignals(False)
+
+            self.single_pdf_chk.blockSignals(True)
+            self.single_pdf_chk.setChecked(False)
+            self.single_pdf_chk.blockSignals(False)
         else:
-            self.single_pdf_chk.setEnabled(False)
-            self.separate_pdf_chk.setEnabled(False)
+            self.separate_pdf_chk.blockSignals(True)
+            self.separate_pdf_chk.setChecked(False)
+            self.separate_pdf_chk.blockSignals(False)
+
+            self.single_pdf_chk.blockSignals(True)
+            self.single_pdf_chk.setChecked(False)
+            self.single_pdf_chk.blockSignals(False)
+
+            self.stamp_para_chk.setChecked(False)
 
     def _on_dedup_toggled(self, checked: bool):
         self.dedup_mode.setEnabled(checked)

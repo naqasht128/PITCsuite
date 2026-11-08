@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal, QObject, QThread, QSettings
 
-from pitcsuite.ui_helpers import lbl, hline, START_BTN, STOP_BTN, notify
+from pitcsuite.ui_helpers import lbl, hline, START_BTN, STOP_BTN, notify, get_status_style
 from pitcsuite.templates import download_template
 from pitcsuite.config import config_path as _config_path
 
@@ -103,14 +103,14 @@ class BillSoftPanel(QWidget):
 
         bh = QHBoxLayout()
         self.btn_start = QPushButton("▶  START"); self.btn_start.setStyleSheet(START_BTN)
-        self.btn_pause = QPushButton("⏸  PAUSE")
+        self.btn_pause = QPushButton("PAUSE")
         self.btn_pause.setProperty("role", "secondary")
         self.btn_start.clicked.connect(self.start_stop); self.btn_pause.clicked.connect(self.pause_resume)
         bh.addWidget(self.btn_start); bh.addWidget(self.btn_pause); bh.addStretch()
         layout.addLayout(bh)
 
         ph = QHBoxLayout()
-        self.lbl_prog = QLabel("0 / 0 bills"); ph.addWidget(self.lbl_prog); ph.addStretch()
+        self.lbl_prog = QLabel("0 / 0 bills"); self.lbl_prog.setObjectName("statusLabel"); self.lbl_prog.setProperty("role", "status"); self.lbl_prog.setStyleSheet(get_status_style()); ph.addWidget(self.lbl_prog); ph.addStretch()
         layout.addLayout(ph)
         self.bar = QProgressBar(); layout.addWidget(self.bar)
 
@@ -216,7 +216,7 @@ class BillSoftPanel(QWidget):
 
     def pause_resume(self):
         self.pause_flag = not self.pause_flag
-        self.btn_pause.setText("▶  RESUME" if self.pause_flag else "⏸  PAUSE")
+        self.btn_pause.setText("RESUME" if self.pause_flag else "PAUSE")
 
     def update_progress(self, cur, total):
         self.bar.setMaximum(total); self.bar.setValue(cur)
@@ -224,9 +224,9 @@ class BillSoftPanel(QWidget):
 
     def on_finished(self):
         self.btn_start.setText("▶  START"); self.btn_start.setStyleSheet(START_BTN)
-        self.btn_pause.setText("⏸  PAUSE")
+        self.btn_pause.setText("PAUSE")
 
-        notify(self, "Done", "E/Bills Downloader completed.", folder_path=self.ed_out.text())
+        notify(self, "Done", "E-Bills Downloader completed.", folder_path=self.ed_out.text())
 
     def _unique_pdf(self, folder, base):
         p = os.path.join(folder, f"{base}.pdf")

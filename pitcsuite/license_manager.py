@@ -409,57 +409,79 @@ class LicenseGateDialog(QDialog):
         self._build_ui(initial_error)
 
     def _apply_styles(self):
+        from pitcsuite.ui_helpers import (
+            get_current_theme_key, get_current_accent_key, get_current_font_family_key,
+            THEMES, ACCENTS, FONTS
+        )
+        theme_key = get_current_theme_key()
+        accent_key = get_current_accent_key()
+        self._palette_data = THEMES.get(theme_key, THEMES["vesper"])
+        self._accent = ACCENTS.get(accent_key, ACCENTS["blue"])
+        font_info = FONTS.get(get_current_font_family_key(), FONTS["inter"])
+        self._font_family = font_info["family"]
+        self._is_light = (theme_key == "light")
+        p = self._palette_data
+        acc = self._accent
+
         self.setStyleSheet(f"""
             QDialog {{
-                background-color: {COLOR_BG_DARK};
-                color: {COLOR_TEXT_PRIMARY};
-                font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+                background-color: {p['window_bg']};
+                color: {p['text_main']};
+                font-family: {self._font_family};
             }}
             QTabWidget::pane {{
-                border: 1px solid {COLOR_BORDER};
-                background: {COLOR_CARD_BG};
+                border: 1px solid {p['card_border']};
+                background: {p['card_bg']};
                 border-radius: 6px;
                 top: -1px;
             }}
             QTabBar::tab {{
-                background: {COLOR_BG_DARK};
-                color: {COLOR_TEXT_MUTED};
-                font-size: 10pt;
-                font-weight: bold;
-                padding: 8px 20px;
-                border: 1px solid {COLOR_BORDER};
+                background: {p['tab_inactive']};
+                color: {p['text_muted']};
+                font-size: 9pt;
+                font-weight: 600;
+                padding: 7px 18px;
+                border: 1px solid {p['divider']};
                 border-bottom: none;
                 border-top-left-radius: 5px;
                 border-top-right-radius: 5px;
                 margin-right: 4px;
             }}
             QTabBar::tab:selected {{
-                background: {COLOR_CARD_BG};
-                color: {COLOR_TEXT_PRIMARY};
-                border-bottom: 2px solid {COLOR_ACCENT_BLUE};
+                background: {p['card_bg']};
+                color: {p['text_main']};
+                border-bottom: 2px solid {acc['hex']};
             }}
             QTabBar::tab:hover:!selected {{
-                background: #2a2d2e;
-                color: {COLOR_TEXT_SECONDARY};
+                background: {p['item_hover']};
+                color: {p['text_sec']};
             }}
             QLabel {{
-                color: {COLOR_TEXT_SECONDARY};
-                font-size: 9.5pt;
+                color: {p['text_sec']};
+                font-size: 9pt;
             }}
             QLineEdit {{
-                background-color: {COLOR_INPUT_BG};
-                color: {COLOR_TEXT_PRIMARY};
-                border: 1px solid {COLOR_BORDER};
-                border-radius: 5px;
+                background-color: {p['input_bg']};
+                color: {p['text_main']};
+                border: 1px solid {p['border']};
+                border-radius: 4px;
                 padding: 7px 10px;
-                font-size: 10pt;
+                font-size: 9.5pt;
             }}
             QLineEdit:focus {{
-                border: 1px solid {COLOR_ACCENT_BLUE};
+                border: 1px solid {acc['hex']};
             }}
         """)
 
     def _build_ui(self, initial_error: str):
+        p = getattr(self, "_palette_data", None)
+        if not p:
+            self._apply_styles()
+            p = self._palette_data
+        acc = self._accent
+        is_light = self._is_light
+        heading_color = "#000000" if is_light else p.get("text_main", "#ffffff")
+
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(20, 18, 20, 18)
         main_layout.setSpacing(14)
@@ -471,17 +493,17 @@ class LicenseGateDialog(QDialog):
         title_vbox.setSpacing(2)
 
         lbl_title = QLabel("PITC Suite Activation Gate")
-        lbl_title.setStyleSheet(f"font-size: 13pt; font-weight: bold; color: {COLOR_TEXT_PRIMARY};")
+        lbl_title.setStyleSheet(f"font-size: 13pt; font-weight: bold; color: {heading_color};")
         title_vbox.addWidget(lbl_title)
 
         lbl_subtitle = QLabel("Hardware-Locked Licensing & Automatic Updates")
-        lbl_subtitle.setStyleSheet(f"font-size: 8.5pt; color: {COLOR_TEXT_MUTED};")
+        lbl_subtitle.setStyleSheet(f"font-size: 8.5pt; color: {p['text_muted']};")
         title_vbox.addWidget(lbl_subtitle)
         header_row.addLayout(title_vbox)
         header_row.addStretch()
 
         badge = QLabel("TN Developers")
-        badge.setStyleSheet(f"background: #1e3a5f; color: #60a5fa; font-weight: bold; font-size: 8pt; padding: 4px 10px; border-radius: 4px;")
+        badge.setStyleSheet(f"background: {p['card_border']}; color: {acc['hex']}; font-weight: bold; font-size: 8pt; padding: 4px 10px; border-radius: 4px;")
         header_row.addWidget(badge)
         main_layout.addLayout(header_row)
 
@@ -492,6 +514,8 @@ class LicenseGateDialog(QDialog):
         main_layout.addWidget(tabs, 1)
 
     def _build_activation_tab(self, initial_error: str) -> QWidget:
+        p = self._palette_data
+        acc = self._accent
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(18, 16, 18, 16)
@@ -499,7 +523,7 @@ class LicenseGateDialog(QDialog):
 
         # 1. Hardware ID Section
         hw_lbl = QLabel("Your Unique Machine Hardware ID (HWID):")
-        hw_lbl.setStyleSheet(f"font-weight: bold; color: {COLOR_TEXT_PRIMARY};")
+        hw_lbl.setStyleSheet(f"font-weight: 600; color: {p['text_main']}; font-size: 9pt;")
         layout.addWidget(hw_lbl)
 
         hw_row = QHBoxLayout()
@@ -509,31 +533,31 @@ class LicenseGateDialog(QDialog):
         self.hw_entry.setReadOnly(True)
         self.hw_entry.setStyleSheet(f"""
             QLineEdit {{
-                background-color: #171717;
-                color: #38bdf8;
-                font-family: 'Consolas', 'Courier New', monospace;
+                background-color: {p['input_bg']};
+                color: {acc['hex']};
+                font-family: 'Cascadia Code', Consolas, monospace;
                 font-weight: bold;
-                font-size: 10pt;
+                font-size: 9.5pt;
                 padding: 7px 10px;
-                border: 1px solid #334155;
+                border: 1px solid {p['border']};
             }}
         """)
         hw_row.addWidget(self.hw_entry, 1)
 
-        self.btn_copy = QPushButton("📋 Copy ID")
+        self.btn_copy = QPushButton("Copy ID")
         self.btn_copy.setCursor(Qt.PointingHandCursor)
         self.btn_copy.setStyleSheet(f"""
             QPushButton {{
-                background: #334155;
-                color: #f1f5f9;
-                font-weight: bold;
-                font-size: 9pt;
+                background: {p['input_bg']};
+                color: {p['text_main']};
+                font-weight: 600;
+                font-size: 8.5pt;
                 padding: 7px 14px;
-                border: none;
-                border-radius: 5px;
+                border: 1px solid {p['border']};
+                border-radius: 4px;
             }}
             QPushButton:hover {{
-                background: #475569;
+                background: {p['card_border']};
             }}
         """)
         self.btn_copy.clicked.connect(self._on_copy_hwid)
@@ -544,21 +568,24 @@ class LicenseGateDialog(QDialog):
 
         # 2. Serial Key Section
         key_lbl = QLabel("Enter Your Serial Key:")
-        key_lbl.setStyleSheet(f"font-weight: bold; color: {COLOR_TEXT_PRIMARY};")
+        key_lbl.setStyleSheet(f"font-weight: 600; color: {p['text_main']}; font-size: 9pt;")
         layout.addWidget(key_lbl)
 
         self.key_entry = QLineEdit()
         self.key_entry.setPlaceholderText("PS-XXXX-XXXX-XXXX")
         self.key_entry.setStyleSheet(f"""
             QLineEdit {{
-                background-color: #171717;
-                color: #4ade80;
-                font-family: 'Consolas', 'Courier New', monospace;
+                background-color: {p['input_bg']};
+                color: {p['text_main']};
+                font-family: 'Cascadia Code', Consolas, monospace;
                 font-weight: bold;
-                font-size: 11pt;
+                font-size: 10.5pt;
                 letter-spacing: 1px;
                 padding: 8px 10px;
-                border: 1px solid #334155;
+                border: 1px solid {p['border']};
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {acc['hex']};
             }}
         """)
         self.key_entry.textChanged.connect(self._format_serial_input)
@@ -571,7 +598,7 @@ class LicenseGateDialog(QDialog):
         if initial_error:
             self.status_lbl.setStyleSheet(f"color: {COLOR_ERROR}; font-size: 8.5pt;")
         else:
-            self.status_lbl.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: 8.5pt;")
+            self.status_lbl.setStyleSheet(f"color: {p['text_muted']}; font-size: 8.5pt;")
         layout.addWidget(self.status_lbl)
 
         layout.addStretch()
@@ -581,20 +608,23 @@ class LicenseGateDialog(QDialog):
         self.btn_activate.setCursor(Qt.PointingHandCursor)
         self.btn_activate.setStyleSheet(f"""
             QPushButton {{
-                background-color: {COLOR_ACCENT_GREEN};
-                color: white;
+                background-color: #10b981;
+                color: #ffffff;
                 font-weight: bold;
-                font-size: 10.5pt;
+                font-size: 10pt;
                 padding: 10px;
                 border: none;
-                border-radius: 6px;
+                border-radius: 5px;
             }}
             QPushButton:hover {{
-                background-color: {COLOR_ACCENT_GREEN_HOVER};
+                background-color: #059669;
+            }}
+            QPushButton:pressed {{
+                background-color: #047857;
             }}
             QPushButton:disabled {{
-                background-color: #334155;
-                color: #94a3b8;
+                background-color: {p['card_border']};
+                color: {p['text_muted']};
             }}
         """)
         self.btn_activate.clicked.connect(self._on_activate_clicked)
@@ -603,13 +633,15 @@ class LicenseGateDialog(QDialog):
         return widget
 
     def _build_plans_tab(self) -> QWidget:
+        p = self._palette_data
+        acc = self._accent
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(10)
 
         info_lbl = QLabel("Choose a subscription plan to activate or renew PITC Suite:")
-        info_lbl.setStyleSheet(f"font-size: 9pt; color: {COLOR_TEXT_SECONDARY};")
+        info_lbl.setStyleSheet(f"font-size: 9pt; color: {p['text_sec']};")
         layout.addWidget(info_lbl)
 
         # Plans Grid
@@ -629,8 +661,8 @@ class LicenseGateDialog(QDialog):
             card = QFrame()
             card.setStyleSheet(f"""
                 QFrame {{
-                    background: #1e222a;
-                    border: 1px solid #334155;
+                    background: {p['card_bg']};
+                    border: 1px solid {p['card_border']};
                     border-radius: 6px;
                     padding: 6px;
                 }}
@@ -640,15 +672,15 @@ class LicenseGateDialog(QDialog):
             c_layout.setSpacing(2)
 
             t_lbl = QLabel(title)
-            t_lbl.setStyleSheet("font-weight: bold; color: #f8fafc; font-size: 9.5pt;")
+            t_lbl.setStyleSheet(f"font-weight: bold; color: {p['text_main']}; font-size: 9.5pt;")
             c_layout.addWidget(t_lbl)
 
             p_lbl = QLabel(price)
-            p_lbl.setStyleSheet("font-weight: bold; color: #4ade80; font-size: 12pt;")
+            p_lbl.setStyleSheet("font-weight: bold; color: #10b981; font-size: 12pt;")
             c_layout.addWidget(p_lbl)
 
             d_lbl = QLabel(f"• {dur}\n• {dev}")
-            d_lbl.setStyleSheet("color: #94a3b8; font-size: 8pt;")
+            d_lbl.setStyleSheet(f"color: {p['text_muted']}; font-size: 8pt;")
             c_layout.addWidget(d_lbl)
 
             grid.addWidget(card, row, col)
@@ -660,11 +692,11 @@ class LicenseGateDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
 
-        btn_wa = QPushButton("💬 Order via WhatsApp")
+        btn_wa = QPushButton("Order via WhatsApp")
         btn_wa.setCursor(Qt.PointingHandCursor)
         btn_wa.setStyleSheet("""
             QPushButton {
-                background: #059669;
+                background: #10b981;
                 color: white;
                 font-weight: bold;
                 font-size: 9pt;
@@ -673,27 +705,33 @@ class LicenseGateDialog(QDialog):
                 border-radius: 5px;
             }
             QPushButton:hover {
+                background: #059669;
+            }
+            QPushButton:pressed {
                 background: #047857;
             }
         """)
         btn_wa.clicked.connect(self._open_whatsapp)
         btn_row.addWidget(btn_wa)
 
-        btn_email = QPushButton("✉ Contact via Email")
+        btn_email = QPushButton("Contact via Email")
         btn_email.setCursor(Qt.PointingHandCursor)
-        btn_email.setStyleSheet("""
-            QPushButton {
-                background: #2563eb;
+        btn_email.setStyleSheet(f"""
+            QPushButton {{
+                background: {acc['hex']};
                 color: white;
                 font-weight: bold;
                 font-size: 9pt;
                 padding: 9px;
                 border: none;
                 border-radius: 5px;
-            }
-            QPushButton:hover {
-                background: #1d4ed8;
-            }
+            }}
+            QPushButton:hover {{
+                background: {acc['hover']};
+            }}
+            QPushButton:pressed {{
+                background: {acc['pressed']};
+            }}
         """)
         btn_email.clicked.connect(self._open_email)
         btn_row.addWidget(btn_email)
@@ -722,7 +760,7 @@ class LicenseGateDialog(QDialog):
         cb = QApplication.clipboard()
         if cb:
             cb.setText(self.device_id)
-            self.btn_copy.setText("✓ Copied")
+            self.btn_copy.setText("Copied")
             self.btn_copy.setStyleSheet("""
                 QPushButton {
                     background: #15803d;
