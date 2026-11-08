@@ -1,3 +1,3 @@
-• **File Renamer & File Mover Dialog Fix:** Resolved message box overflowing screen on large batches of skipped/missing files by introducing auto-scroll details and fixed dialog height boundaries.
-• **Keyboard Dismissal (Esc & Enter):** Added full keyboard control so users can immediately dismiss completion and alert dialogs without getting stuck.
-• **File Mover In-Panel Log Box:** Added dedicated live log box to File Mover panel to log missing files in real-time alongside Excel status updates.
+• **Vesper Theme and Typography Engine:** Introduced sleek Vesper theme as the new default palette with selectable font families (Inter default, System UI, Google Sans).
+• **Standardized 800x650 Window and Responsive Scaling:** Calibrated default window to 800x650 with smooth shrinking down to 650x520 and standardized 3-column tool grid alignments.
+• **Universal Esc Dismissal and Vector Controls:** Added global Esc key filter to immediately dismiss any message box or dialog across all tools, plus crisp SVG dropdown arrows and checkmarks.
