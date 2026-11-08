@@ -28,6 +28,11 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.104": [
+        "<b>Vesper Theme and Typography Engine:</b> Introduced sleek Vesper theme as the new default palette with selectable font families (Inter default, System UI, Google Sans).",
+        "<b>Standardized 800x650 Window and Responsive Scaling:</b> Calibrated default window to 800x650 with smooth shrinking down to 650x520 and standardized 3-column tool grid alignments.",
+        "<b>Universal Esc Dismissal and Vector Controls:</b> Added global Esc key filter to immediately dismiss any message box or dialog across all tools, plus crisp SVG dropdown arrows and checkmarks."
+    ],
     "v2.8.103": [
         "<b>File Renamer & File Mover Dialog Fix:</b> Resolved message box overflowing screen on large batches of skipped/missing files by introducing auto-scroll details and fixed dialog height boundaries.",
         "<b>Keyboard Dismissal (Esc & Enter):</b> Added full keyboard control so users can immediately dismiss completion and alert dialogs without getting stuck.",
