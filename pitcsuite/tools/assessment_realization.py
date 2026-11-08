@@ -607,59 +607,59 @@ class AssessmentRealizationPanel(QWidget):
 
         # Inputs Group
         group = QGroupBox("Inputs")
-        form = QVBoxLayout(group)
+        form = QGridLayout(group)
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
 
         # Source File row
-        r1 = QHBoxLayout()
-        r1.addWidget(QLabel("Source Report (.txt):"))
+        form.addWidget(QLabel("Source Report (.txt):"), 0, 0)
         self.file_ed = QLineEdit()
         self.file_ed.setReadOnly(True)
         self.file_ed.setPlaceholderText("Select Assessment & Realization text file...")
-        r1.addWidget(self.file_ed, 1)
+        form.addWidget(self.file_ed, 0, 1)
 
         self.add_file_btn = QPushButton("📄 Add File")
         self.add_file_btn.clicked.connect(self._add_file)
-        r1.addWidget(self.add_file_btn)
-        form.addLayout(r1)
+        form.addWidget(self.add_file_btn, 0, 2)
 
         # Target Excel File row
-        r2 = QHBoxLayout()
-        r2.addWidget(QLabel("Target Excel File:"))
+        form.addWidget(QLabel("Target Excel File:"), 1, 0)
         self.excel_ed = QLineEdit()
         self.excel_ed.setPlaceholderText("Excel output path (auto-suggested on file selection)...")
-        r2.addWidget(self.excel_ed, 1)
+        form.addWidget(self.excel_ed, 1, 1)
 
         self.browse_excel_btn = QPushButton("📁 Browse...")
         self.browse_excel_btn.clicked.connect(self._browse_excel)
-        r2.addWidget(self.browse_excel_btn)
-        form.addLayout(r2)
+        form.addWidget(self.browse_excel_btn, 1, 2)
 
+        form.setColumnStretch(1, 1)
         layout.addWidget(group)
 
         # Actions Row
-        actions = QGridLayout()
-        actions.setHorizontalSpacing(8)
-        actions.setVerticalSpacing(6)
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
         self.start_btn = QPushButton("▶  START EXTRACTION")
         self.start_btn.setStyleSheet(START_BTN)
         self.start_btn.clicked.connect(self._start)
-        actions.addWidget(self.start_btn, 0, 0)
+        actions.addWidget(self.start_btn)
 
         self.stop_btn = QPushButton("■  STOP")
         self.stop_btn.setStyleSheet(STOP_BTN)
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self._stop)
-        actions.addWidget(self.stop_btn, 0, 1)
+        actions.addWidget(self.stop_btn)
 
         self.open_excel_btn = QPushButton("📊 Open Excel")
         self.open_excel_btn.setEnabled(False)
         self.open_excel_btn.clicked.connect(self._open_excel)
-        actions.addWidget(self.open_excel_btn, 1, 0)
+        actions.addWidget(self.open_excel_btn)
 
         self.open_folder_btn = QPushButton("📂 Open Folder")
         self.open_folder_btn.setEnabled(False)
         self.open_folder_btn.clicked.connect(self._open_folder)
-        actions.addWidget(self.open_folder_btn, 1, 1)
+        actions.addWidget(self.open_folder_btn)
+
+        actions.addStretch()
         layout.addLayout(actions)
 
         # Status & Progress
@@ -675,7 +675,8 @@ class AssessmentRealizationPanel(QWidget):
         # Log Box
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
-        layout.addWidget(self.log_box)
+        self.log_box.setMinimumHeight(65)
+        layout.addWidget(self.log_box, 1)
 
     def _add_file(self):
         path, _ = QFileDialog.getOpenFileName(

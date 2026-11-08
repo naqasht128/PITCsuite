@@ -9,7 +9,8 @@ from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QIcon, QPalette, QColor
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QLineEdit, QFileDialog, QComboBox, QGroupBox,
-    QProgressBar, QPlainTextEdit, QMessageBox, QCheckBox)
+    QProgressBar, QPlainTextEdit, QMessageBox, QCheckBox, QGridLayout)
+from pitcsuite.ui_helpers import START_BTN, STOP_BTN
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 
@@ -148,93 +149,103 @@ class PDFMerger(QWidget):
         super().__init__()
         self.worker = None
         self.setWindowTitle("PDF Merger")
-        self.resize(540, 500)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(6)
-        heading = QLabel("PDF Merger")
-        heading.setStyleSheet("font-size: 13pt; font-weight: 600")
-        layout.addWidget(heading)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(10)
+
         self.settings = QGroupBox("Merge settings")
-        form = QVBoxLayout(self.settings)
-        form.setSpacing(5)
+        form = QGridLayout(self.settings)
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+
+        # Mode row
+        form.addWidget(QLabel("Merge Mode:"), 0, 0)
         self.mode = QComboBox()
         self.mode.addItems(["Single Folder", "Multiple folders"])
-        # Open on the original single-folder tool by default.
         self.mode.setCurrentIndex(0)
-        form.addWidget(self.mode)
-        self.hint = QLabel()
-        self.hint.setWordWrap(True)
-        form.addWidget(self.hint)
+        form.addWidget(self.mode, 0, 1, 1, 2)
+
         self.folder_rows = []
         self.folders = []
         self.folder_labels = []
         for i in range(5):
-            row_widget = QWidget()
-            row = QHBoxLayout(row_widget)
-            row.setContentsMargins(0, 0, 0, 0)
-            folder_label = QLabel(f"Folder {i + 1}")
-            row.addWidget(folder_label)
-            self.folder_labels.append(folder_label)
+            lbl_f = QLabel(f"Folder {i + 1}:")
+            form.addWidget(lbl_f, i + 1, 0)
+            self.folder_labels.append(lbl_f)
+
             edit = QLineEdit()
-            edit.setPlaceholderText("Select or paste an input folder")
-            row.addWidget(edit, 1)
-            button = QPushButton("Browse")
-            button.setProperty("role", "secondary")
-            button.clicked.connect(lambda checked=False, field=edit: self.browse_folder(field))
-            row.addWidget(button)
-            form.addWidget(row_widget)
-            self.folder_rows.append(row_widget)
+            edit.setPlaceholderText("Select or paste an input folder...")
+            form.addWidget(edit, i + 1, 1)
             self.folders.append(edit)
-        row = QHBoxLayout()
-        row.addWidget(QLabel("Output PDF"))
+
+            btn = QPushButton("Browse")
+            btn.clicked.connect(lambda checked=False, field=edit: self.browse_folder(field))
+            form.addWidget(btn, i + 1, 2)
+
+            self.folder_rows.append((lbl_f, edit, btn))
+
+        # Output PDF row
+        row_out_idx = 6
+        form.addWidget(QLabel("Output PDF:"), row_out_idx, 0)
         self.output = QLineEdit()
-        self.output.setPlaceholderText("Choose where to save")
-        row.addWidget(self.output, 1)
-        button = QPushButton("Save as")
-        button.setProperty("role", "secondary")
-        button.clicked.connect(self.browse_output)
-        row.addWidget(button)
-        form.addLayout(row)
+        self.output.setPlaceholderText("Choose where to save...")
+        form.addWidget(self.output, row_out_idx, 1)
+        btn_save = QPushButton("Save as")
+        btn_save.clicked.connect(self.browse_output)
+        form.addWidget(btn_save, row_out_idx, 2)
+
+        # Padding & Stamp row
+        row_opt_idx = 7
+        form.addWidget(QLabel("Page Layout:"), row_opt_idx, 0)
+        opt_h = QHBoxLayout()
+        opt_h.setSpacing(12)
         self.padding = QComboBox()
         self.padding.addItem("No blank pages", 0)
         self.padding.addItem("Back-to-back / duplex (1 page per side)", 1)
         for count in (2, 4, 6, 9, 16):
             self.padding.addItem(f"N-up duplex ({count} pages per side)", count)
-        form.addWidget(self.padding)
+        opt_h.addWidget(self.padding, 1)
+
         self.stamp = QCheckBox("Stamp: Add filename at top right")
-        form.addWidget(self.stamp)
-        note = QLabel("Duplex adds blanks between PDFs. For N-up, also set pages per side when printing.")
-        note.setWordWrap(True)
-        form.addWidget(note)
+        opt_h.addWidget(self.stamp)
+        form.addLayout(opt_h, row_opt_idx, 1, 1, 2)
+
+        form.setColumnStretch(1, 1)
         layout.addWidget(self.settings)
-        row = QHBoxLayout()
-        self.start = QPushButton("Merge PDFs")
-        self.start.setProperty("role", "primary")
+
+        # Actions row
+        act_row = QHBoxLayout()
+        act_row.setSpacing(8)
+        self.start = QPushButton("▶  Merge PDFs")
+        self.start.setStyleSheet(START_BTN)
         self.start.clicked.connect(self.begin)
-        self.stop = QPushButton("Stop")
-        self.stop.setProperty("role", "secondary")
+        self.stop = QPushButton("■  Stop")
+        self.stop.setStyleSheet(STOP_BTN)
         self.stop.setEnabled(False)
         self.stop.clicked.connect(self.cancel)
-        row.addWidget(self.start)
-        row.addWidget(self.stop)
-        layout.addLayout(row)
+        act_row.addWidget(self.start)
+        act_row.addWidget(self.stop)
+        act_row.addStretch()
+        layout.addLayout(act_row)
+
         self.progress = QProgressBar()
         layout.addWidget(self.progress)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(1000)
-        self.log.setMinimumHeight(60)
-        self.log.setMaximumHeight(90)
+        self.log.setMinimumHeight(65)
         layout.addWidget(self.log, 1)
         self.mode.currentIndexChanged.connect(self.update_mode)
         self.update_mode()
+
     def update_mode(self):
         multi = bool(self.mode.currentIndex())
-        self.folder_labels[0].setText("Folder 1" if multi else "Folder")
-        for i, row in enumerate(self.folder_rows):
-            row.setVisible(multi or i == 0)
-        self.hint.setText("Choose up to 5 folders." if multi else "Choose folder:")
+        self.folder_labels[0].setText("Folder 1:" if multi else "Folder:")
+        for i, (lbl_w, edit_w, btn_w) in enumerate(self.folder_rows):
+            visible = multi or i == 0
+            lbl_w.setVisible(visible)
+            edit_w.setVisible(visible)
+            btn_w.setVisible(visible)
     def browse_folder(self, field):
         folder = QFileDialog.getExistingDirectory(self, "Input folder", field.text())
         if folder:

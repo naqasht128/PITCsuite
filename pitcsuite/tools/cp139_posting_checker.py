@@ -1171,45 +1171,53 @@ class CP139PostingCheckerPanel(QWidget):
         group_out = QGroupBox("Output Settings")
         form_out = QVBoxLayout(group_out)
 
-        out_row = QHBoxLayout()
-        out_row.addWidget(QLabel("Output Folder:"))
+        out_grid = QGridLayout()
+        out_grid.setHorizontalSpacing(8)
+        out_grid.setVerticalSpacing(6)
+        out_grid.addWidget(QLabel("Output Folder:"), 0, 0)
         self.out_dir_ed = QLineEdit()
         self.out_dir_ed.setPlaceholderText("Auto-generated alongside source files if left blank")
-        out_row.addWidget(self.out_dir_ed, 1)
+        out_grid.addWidget(self.out_dir_ed, 0, 1)
 
         browse_folder_btn = QPushButton("📁 Browse Folder...")
         browse_folder_btn.clicked.connect(self._browse_folder)
-        out_row.addWidget(browse_folder_btn)
-        form_out.addLayout(out_row)
+        out_grid.addWidget(browse_folder_btn, 0, 2)
+        out_grid.setColumnStretch(1, 1)
+        form_out.addLayout(out_grid)
 
-        dedup_row = QHBoxLayout()
+        filter_grid = QGridLayout()
+        filter_grid.setHorizontalSpacing(12)
+        filter_grid.setVerticalSpacing(8)
+
         self.single_chk = QCheckBox("Single Postings only")
         self.single_chk.setChecked(False)
         self.single_chk.toggled.connect(self._on_dedup_toggled)
-        dedup_row.addWidget(self.single_chk)
+        filter_grid.addWidget(self.single_chk, 0, 0)
 
-        dedup_row.addWidget(QLabel("Strategy:"))
+        strat_row = QHBoxLayout()
+        strat_row.setSpacing(6)
+        strat_row.addWidget(QLabel("Strategy:"))
         self.dedup_mode = QComboBox()
         self.dedup_mode.addItem("Prioritize POSTED (Recommended)", "prefer_posted")
         self.dedup_mode.addItem("Strictly Keep 1st Finding", "first")
         self.dedup_mode.addItem("Keep Last Finding", "last")
         self.dedup_mode.setEnabled(False)
-        dedup_row.addWidget(self.dedup_mode)
-        dedup_row.addStretch()
-        form_out.addLayout(dedup_row)
+        strat_row.addWidget(self.dedup_mode, 1)
+        filter_grid.addLayout(strat_row, 0, 1)
 
-        filter_row = QHBoxLayout()
-        filter_row.addWidget(QLabel("Status Filter:"))
+        stat_row = QHBoxLayout()
+        stat_row.setSpacing(6)
+        stat_row.addWidget(QLabel("Status Filter:"))
         self.status_filter_cb = QComboBox()
         self.status_filter_cb.addItem("All Records", "all")
         self.status_filter_cb.addItem("Posted Only", "posted")
         self.status_filter_cb.addItem("Not Pos Only", "not_pos")
-        filter_row.addWidget(self.status_filter_cb)
+        stat_row.addWidget(self.status_filter_cb, 1)
+        filter_grid.addLayout(stat_row, 1, 0)
 
         self.file_chk = QCheckBox("Include source file")
-        filter_row.addWidget(self.file_chk)
-        filter_row.addStretch()
-        form_out.addLayout(filter_row)
+        filter_grid.addWidget(self.file_chk, 1, 1)
+        form_out.addLayout(filter_grid)
         layout.addWidget(group_out)
 
         # Section 3: PDF Generation Group
@@ -1290,10 +1298,10 @@ class CP139PostingCheckerPanel(QWidget):
 
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
-        self.log_box.setMinimumHeight(150)
+        self.log_box.setMinimumHeight(65)
         form_logs.addWidget(self.log_box)
 
-        layout.addWidget(group_logs)
+        layout.addWidget(group_logs, 1)
 
     def _on_single_pdf_toggled(self, checked: bool):
         if not self.make_pdf_chk.isChecked():
@@ -1410,7 +1418,8 @@ class CP139PostingCheckerPanel(QWidget):
             download_cp139_template(path)
             box = QMessageBox(QMessageBox.Information, "Template Saved", f"CP-139 template saved to:\n{path}", parent=self)
             box.addButton("Open File", QMessageBox.ActionRole).clicked.connect(lambda: os.startfile(path))
-            box.addButton(QMessageBox.Ok)
+            ok_btn = box.addButton(QMessageBox.Ok)
+            box.setEscapeButton(ok_btn)
             box.open()
 
     def _browse_folder(self):
@@ -1515,7 +1524,8 @@ class CP139PostingCheckerPanel(QWidget):
         open_folder_btn = box.addButton("Open Folder", QMessageBox.ActionRole)
         open_folder_btn.clicked.connect(lambda: os.startfile(out_folder) if os.path.exists(out_folder) else None)
 
-        box.addButton(QMessageBox.Ok)
+        ok_btn = box.addButton(QMessageBox.Ok)
+        box.setEscapeButton(ok_btn)
         box.open()
 
     def _failed(self, error_msg: str):

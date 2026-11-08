@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
-    QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+    QFileDialog, QGroupBox, QHBoxLayout, QGridLayout, QLabel, QLineEdit, QMessageBox,
     QPushButton, QTextEdit, QVBoxLayout, QWidget,
 )
 
@@ -161,15 +161,42 @@ class FileRenamerPanel(QWidget):
         layout.addWidget(lbl("File Renamer", bold=True, color="#7eb8f7"))
         layout.addWidget(lbl("Use Excel column A for original names and column B for new names, starting at row 2. The original extension is kept automatically (PDF stays PDF, XLSX stays XLSX). Remarks are written to column D.", color="#556"))
         layout.addWidget(hline())
-        group = QGroupBox("Inputs"); form = QVBoxLayout(group)
+        group = QGroupBox("Inputs")
+        form = QGridLayout(group)
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
         self.excel_ed, self.source_ed, self.destination_ed = QLineEdit(), QLineEdit(), QLineEdit()
-        for label, edit, kind in (("Excel file:", self.excel_ed, "excel"), ("Source folder:", self.source_ed, "source"), ("Destination (optional):", self.destination_ed, "destination")):
-            row = QHBoxLayout(); row.addWidget(QLabel(label)); edit.setReadOnly(True); edit.setProperty("preferred_width", 245); row.addWidget(edit, 1)
-            browse = QPushButton("Browse"); browse.clicked.connect(lambda _, e=edit, k=kind: self._browse(e, k)); row.addWidget(browse); form.addLayout(row)
+        items = (
+            ("Excel file:", self.excel_ed, "excel"),
+            ("Source folder:", self.source_ed, "source"),
+            ("Destination (optional):", self.destination_ed, "destination")
+        )
+        for i, (label, edit, kind) in enumerate(items):
+            form.addWidget(QLabel(label), i, 0)
+            edit.setReadOnly(True)
+            edit.setPlaceholderText(f"Select {label.lower().replace(':', '')}...")
+            form.addWidget(edit, i, 1)
+            browse = QPushButton("Browse")
+            browse.clicked.connect(lambda _, e=edit, k=kind: self._browse(e, k))
+            form.addWidget(browse, i, 2)
+        form.setColumnStretch(1, 1)
         layout.addWidget(group)
-        self.start_btn = QPushButton("▶  RENAME FILES"); self.start_btn.setStyleSheet(START_BTN); self.start_btn.clicked.connect(self._start); layout.addWidget(self.start_btn)
-        self.status = QLabel("Status: Idle"); self.status.setStyleSheet("color:#4a90d9;"); layout.addWidget(self.status)
-        self.log_box = QTextEdit(); self.log_box.setReadOnly(True); layout.addWidget(self.log_box)
+
+        act_row = QHBoxLayout()
+        self.start_btn = QPushButton("▶  RENAME FILES")
+        self.start_btn.setStyleSheet(START_BTN)
+        self.start_btn.clicked.connect(self._start)
+        act_row.addWidget(self.start_btn)
+        act_row.addStretch()
+        layout.addLayout(act_row)
+
+        self.status = QLabel("Status: Idle")
+        self.status.setStyleSheet("color:#4a90d9;")
+        layout.addWidget(self.status)
+        self.log_box = QTextEdit()
+        self.log_box.setReadOnly(True)
+        self.log_box.setMinimumHeight(65)
+        layout.addWidget(self.log_box, 1)
 
     def _browse(self, edit, kind):
         path = QFileDialog.getOpenFileName(self, "Excel input file", "", "Excel files (*.xlsx *.xlsm);;All files (*.*)")[0] if kind == "excel" else QFileDialog.getExistingDirectory(self, "Select folder")

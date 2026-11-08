@@ -4,7 +4,7 @@ import threading
 import configparser
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Signal, QSettings
+from PySide6.QtCore import QThread, Signal, QSettings, Qt
 from PySide6.QtWidgets import (
     QFileDialog, QComboBox, QCheckBox, QDoubleSpinBox, QGroupBox, QHBoxLayout, QGridLayout, QLabel, QLineEdit,
     QListWidget, QMessageBox, QPushButton, QTextEdit, QProgressBar, QVBoxLayout, QWidget,
@@ -140,39 +140,49 @@ class BillScraperPanel(QWidget):
         layout = QVBoxLayout(self); layout.setSpacing(10)
         layout.addWidget(lbl("PITC Bill Scrapper", bold=True, color="#7eb8f7"))
         layout.addWidget(lbl("Update an Excel workbook with live PITC bill details.", color="#556")); layout.addWidget(hline())
-        group = QGroupBox("Workbook")
-        form = QVBoxLayout(group)
-        row = QHBoxLayout()
-        row.addWidget(QLabel("Excel file:"))
-        self.xlsx_ed = QLineEdit(); self.xlsx_ed.setReadOnly(True); self.xlsx_ed.setProperty("preferred_width", 245); row.addWidget(self.xlsx_ed, 1)
-        browse = QPushButton("Browse"); browse.clicked.connect(self._browse); row.addWidget(browse); form.addLayout(row)
+        group = QGroupBox("Workbook & Source")
+        form = QGridLayout(group)
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
 
-        url_row = QHBoxLayout()
-        url_row.addWidget(QLabel("Bills URL:"))
+        # Row 0: Excel file
+        form.addWidget(QLabel("Excel file:"), 0, 0)
+        self.xlsx_ed = QLineEdit()
+        self.xlsx_ed.setReadOnly(True)
+        self.xlsx_ed.setPlaceholderText("Select Excel workbook (*.xlsx)...")
+        form.addWidget(self.xlsx_ed, 0, 1)
+        browse = QPushButton("Browse")
+        browse.clicked.connect(self._browse)
+        form.addWidget(browse, 0, 2)
+
+        # Row 1: Bills URL
+        form.addWidget(QLabel("Bills URL:"), 1, 0)
         self.ed_url = QLineEdit(self._load_url())
         self.ed_url.setReadOnly(True)
-        self.ed_url.setProperty("preferred_width", 310)
-        url_row.addWidget(self.ed_url, 1)
         self.ed_url.returnPressed.connect(lambda: self._toggle_url() if self.btn_url.text() == "Save" else None)
+        form.addWidget(self.ed_url, 1, 1)
         self.btn_url = QPushButton("Edit")
         self.btn_url.clicked.connect(self._toggle_url)
-        url_row.addWidget(self.btn_url)
-        form.addLayout(url_row)
+        form.addWidget(self.btn_url, 1, 2)
 
-        options = QHBoxLayout(); options.addWidget(QLabel("Delay between bills (seconds):"))
-        self.delay = QDoubleSpinBox(); self.delay.setRange(0.1, 30); self.delay.setSingleStep(.1); self.delay.setValue(2.0); options.addWidget(self.delay); options.addStretch(); form.addLayout(options)
+        # Row 2: Delay
+        form.addWidget(QLabel("Delay (seconds):"), 2, 0)
+        self.delay = QDoubleSpinBox()
+        self.delay.setRange(0.1, 30)
+        self.delay.setSingleStep(0.1)
+        self.delay.setValue(2.0)
+        self.delay.setFixedWidth(80)
+        form.addWidget(self.delay, 2, 1, 1, 2, Qt.AlignLeft)
 
-        hist_grid = QGridLayout()
-        hist_grid.setHorizontalSpacing(10)
-        hist_grid.setVerticalSpacing(4)
+        # Rows 3 & 4: History checkboxes
         self.chk_history_1yr = QCheckBox("Billing/Payment History (1 year)")
         self.chk_history_6mo = QCheckBox("Billing Payment History (6 months)")
         self.chk_history_1yr.toggled.connect(self._toggle_1yr)
         self.chk_history_6mo.toggled.connect(self._toggle_6mo)
-        hist_grid.addWidget(self.chk_history_1yr, 0, 0)
-        hist_grid.addWidget(self.chk_history_6mo, 1, 0)
-        form.addLayout(hist_grid)
+        form.addWidget(self.chk_history_1yr, 3, 1, 1, 2)
+        form.addWidget(self.chk_history_6mo, 4, 1, 1, 2)
 
+        form.setColumnStretch(1, 1)
         layout.addWidget(group)
         actions = QHBoxLayout(); self.start_btn = QPushButton("▶  START"); self.start_btn.setStyleSheet(START_BTN); self.start_btn.clicked.connect(self._start)
         self.stop_btn = QPushButton("■  STOP"); self.stop_btn.setStyleSheet(STOP_BTN); self.stop_btn.setEnabled(False); self.stop_btn.clicked.connect(self._stop)
@@ -336,12 +346,36 @@ class FileMoverPanel(QWidget):
     def __init__(self):
         super().__init__(); self.worker = None
         layout = QVBoxLayout(self); layout.setSpacing(10); layout.addWidget(lbl("PDF / File Mover", bold=True, color="#7eb8f7")); layout.addWidget(hline())
-        group = QGroupBox("Inputs"); form = QVBoxLayout(group)
-        self.excel_ed, self.source_ed, self.destination_ed = QLineEdit(), QLineEdit(), QLineEdit()
-        for label, edit, kind in (("Excel file:", self.excel_ed, "excel"), ("Source folder:", self.source_ed, "source"), ("Destination folder:", self.destination_ed, "destination")):
-            row = QHBoxLayout(); row.addWidget(QLabel(label)); edit.setReadOnly(True); edit.setProperty("preferred_width", 245); row.addWidget(edit, 1); button = QPushButton("Browse"); button.clicked.connect(lambda _, e=edit, k=kind: self._browse(e, k)); row.addWidget(button); form.addLayout(row)
+        group = QGroupBox("Inputs")
+        form = QGridLayout(group)
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        self.excel_ed = QLineEdit()
+        self.source_ed = QLineEdit()
+        self.destination_ed = QLineEdit()
+        items = (
+            ("Excel file:", self.excel_ed, "excel"),
+            ("Source folder:", self.source_ed, "source"),
+            ("Destination folder:", self.destination_ed, "destination")
+        )
+        for i, (label, edit, kind) in enumerate(items):
+            form.addWidget(QLabel(label), i, 0)
+            edit.setReadOnly(True)
+            edit.setPlaceholderText(f"Select {label.lower().replace(':', '')}...")
+            form.addWidget(edit, i, 1)
+            button = QPushButton("Browse")
+            button.clicked.connect(lambda _, e=edit, k=kind: self._browse(e, k))
+            form.addWidget(button, i, 2)
+        form.setColumnStretch(1, 1)
         layout.addWidget(group)
-        self.start_btn = QPushButton("▶  MOVE FILES"); self.start_btn.setStyleSheet(START_BTN); self.start_btn.clicked.connect(self._start); layout.addWidget(self.start_btn)
+
+        act_row = QHBoxLayout()
+        self.start_btn = QPushButton("▶  MOVE FILES")
+        self.start_btn.setStyleSheet(START_BTN)
+        self.start_btn.clicked.connect(self._start)
+        act_row.addWidget(self.start_btn)
+        act_row.addStretch()
+        layout.addLayout(act_row)
         self.status = QLabel("Status: Idle"); layout.addWidget(self.status); layout.addStretch()
 
     def _browse(self, edit, kind):
@@ -392,33 +426,50 @@ class CP52PostingCheckerPanel(QWidget):
         layout.addWidget(lbl("CP 52 Posting to PDF", bold=True, color="#7eb8f7"))
         layout.addWidget(lbl("Match CP-52 posting records from TXT/PDF files and create highlighted PDFs.", color="#556")); layout.addWidget(hline())
         group = QGroupBox("Inputs")
-        form = QVBoxLayout(group)
+        form = QGridLayout(group)
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
         self.source_ed, self.workbook_ed, self.output_ed = QLineEdit(), QLineEdit(), QLineEdit()
-        for label, edit, kind in (("Posting folder:", self.source_ed, "folder"), ("Excel input:", self.workbook_ed, "excel"), ("Output folder:", self.output_ed, "folder")):
-            row = QHBoxLayout(); row.addWidget(QLabel(label)); edit.setProperty("preferred_width", 245); row.addWidget(edit, 1)
-            button = QPushButton("Browse"); button.clicked.connect(lambda _, e=edit, k=kind: self._browse(e, k)); row.addWidget(button); form.addLayout(row)
-        filter_row = QHBoxLayout(); filter_row.addWidget(QLabel("Find Posting of:"))
+        items = (
+            ("Posting folder:", self.source_ed, "folder"),
+            ("Excel input:", self.workbook_ed, "excel"),
+            ("Output folder:", self.output_ed, "folder")
+        )
+        for i, (label, edit, kind) in enumerate(items):
+            form.addWidget(QLabel(label), i, 0)
+            edit.setPlaceholderText(f"Select {label.lower().replace(':', '')}...")
+            form.addWidget(edit, i, 1)
+            button = QPushButton("Browse")
+            button.clicked.connect(lambda _, e=edit, k=kind: self._browse(e, k))
+            form.addWidget(button, i, 2)
+
+        form.addWidget(QLabel("Find Posting of:"), 3, 0)
         self.code_filter = QComboBox()
         self.code_filter.addItem("Code-C", "C")
         self.code_filter.addItem("Code-B", "B")
         self.code_filter.addItem("Code-F", "F")
         self.code_filter.addItem("All Codes", "ALL")
         self.code_filter.setCurrentIndex(3)
-        filter_row.addWidget(self.code_filter); filter_row.addStretch(); form.addLayout(filter_row)
+        form.addWidget(self.code_filter, 3, 1, 1, 2, Qt.AlignLeft)
+        form.setColumnStretch(1, 1)
         layout.addWidget(group)
-        actions = QGridLayout()
-        actions.setHorizontalSpacing(8)
-        actions.setVerticalSpacing(6)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
         self.start_btn = QPushButton("▶  CHECK POSTING")
         self.start_btn.setStyleSheet(START_BTN)
         self.start_btn.clicked.connect(self._start)
-        actions.addWidget(self.start_btn, 0, 0, 1, 2)
+        actions.addWidget(self.start_btn)
+
         template_btn = QPushButton("📥 Template")
         template_btn.clicked.connect(self._download_template)
-        actions.addWidget(template_btn, 1, 0)
+        actions.addWidget(template_btn)
+
         open_btn = QPushButton("📂 Open Folder")
         open_btn.clicked.connect(self._open_output)
-        actions.addWidget(open_btn, 1, 1)
+        actions.addWidget(open_btn)
+
+        actions.addStretch()
         layout.addLayout(actions)
         self.status = QLabel("Status: Ready"); self.status.setStyleSheet("color:#4a90d9;"); layout.addWidget(self.status)
         self.log_box = QTextEdit(); self.log_box.setReadOnly(True); layout.addWidget(self.log_box)
@@ -546,17 +597,16 @@ class CP136PostingCheckerPanel(QWidget):
         out_grid.addWidget(QLabel("Output destination:"), 0, 0)
         self.out_ed = QLineEdit()
         self.out_ed.setPlaceholderText("Auto-generated alongside source files if left blank")
-        out_grid.addWidget(self.out_ed, 0, 1, 1, 2)
+        out_grid.addWidget(self.out_ed, 0, 1)
 
         browse_file_btn = QPushButton("📄 File...")
         browse_file_btn.clicked.connect(self._browse_file)
-        out_grid.addWidget(browse_file_btn, 1, 1)
+        out_grid.addWidget(browse_file_btn, 0, 2)
 
         browse_folder_btn = QPushButton("📁 Folder...")
         browse_folder_btn.clicked.connect(self._browse_folder)
-        out_grid.addWidget(browse_folder_btn, 1, 2)
+        out_grid.addWidget(browse_folder_btn, 0, 3)
         out_grid.setColumnStretch(1, 1)
-        out_grid.setColumnStretch(2, 1)
         form_out.addLayout(out_grid)
 
         # Strategy controls
@@ -566,7 +616,7 @@ class CP136PostingCheckerPanel(QWidget):
         self.dedup_mode.addItem("Prioritize POSTED", "prefer_posted")
         self.dedup_mode.addItem("Strictly Keep 1st Finding", "first")
         self.dedup_mode.addItem("Keep Last Finding", "last")
-        strategy_row.addWidget(self.dedup_mode)
+        strategy_row.addWidget(self.dedup_mode, 1)
         strategy_row.addStretch()
         form_out.addLayout(strategy_row)
 
@@ -594,29 +644,30 @@ class CP136PostingCheckerPanel(QWidget):
         layout.addWidget(group_out)
 
         # Actions Row
-        actions = QGridLayout()
-        actions.setHorizontalSpacing(8)
-        actions.setVerticalSpacing(6)
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
         self.start_btn = QPushButton("▶  START PROCESSING")
         self.start_btn.setStyleSheet(START_BTN)
         self.start_btn.clicked.connect(self._start)
-        actions.addWidget(self.start_btn, 0, 0)
+        actions.addWidget(self.start_btn)
 
         self.stop_btn = QPushButton("■  STOP")
         self.stop_btn.setStyleSheet(STOP_BTN)
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self._stop)
-        actions.addWidget(self.stop_btn, 0, 1)
+        actions.addWidget(self.stop_btn)
 
         self.open_excel_btn = QPushButton("📊 Open Excel")
         self.open_excel_btn.setEnabled(False)
         self.open_excel_btn.clicked.connect(self._open_excel)
-        actions.addWidget(self.open_excel_btn, 1, 0)
+        actions.addWidget(self.open_excel_btn)
 
         self.open_folder_btn = QPushButton("📂 Open Folder")
         self.open_folder_btn.setEnabled(False)
         self.open_folder_btn.clicked.connect(self._open_folder)
-        actions.addWidget(self.open_folder_btn, 1, 1)
+        actions.addWidget(self.open_folder_btn)
+
+        actions.addStretch()
         layout.addLayout(actions)
 
         self.status = QLabel("Status: Ready. Add CP-136 / CP-137 file(s) or folder to begin.")
@@ -801,27 +852,28 @@ class CP21cConverterPanel(QWidget):
         layout.addWidget(hline())
 
         group = QGroupBox("Inputs")
-        form = QVBoxLayout(group)
-        
+        form = QGridLayout(group)
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+
+        form.addWidget(QLabel("Source CP-21C PDF:"), 0, 0)
         self.pdf_ed = QLineEdit()
         self.pdf_ed.setReadOnly(True)
-        r1 = QHBoxLayout()
-        r1.addWidget(QLabel("Source CP-21C PDF:"))
-        r1.addWidget(self.pdf_ed, 1)
+        self.pdf_ed.setPlaceholderText("Select CP-21C PDF...")
+        form.addWidget(self.pdf_ed, 0, 1)
         b1 = QPushButton("Browse")
         b1.clicked.connect(self._browse_pdf)
-        r1.addWidget(b1)
-        form.addLayout(r1)
-        
+        form.addWidget(b1, 0, 2)
+
+        form.addWidget(QLabel("Target Excel File:"), 1, 0)
         self.excel_ed = QLineEdit()
-        r2 = QHBoxLayout()
-        r2.addWidget(QLabel("Target Excel File:"))
-        r2.addWidget(self.excel_ed, 1)
+        self.excel_ed.setPlaceholderText("Select target Excel file (*.xlsx)...")
+        form.addWidget(self.excel_ed, 1, 1)
         b2 = QPushButton("Browse")
         b2.clicked.connect(self._browse_excel)
-        r2.addWidget(b2)
-        form.addLayout(r2)
-        
+        form.addWidget(b2, 1, 2)
+
+        form.setColumnStretch(1, 1)
         layout.addWidget(group)
 
         actions = QHBoxLayout()

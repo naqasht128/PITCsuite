@@ -1093,8 +1093,8 @@ class PITCPanel(QWidget):
         g1v.addWidget(btn_tpl)
         layout.addWidget(g1)
 
-        # ── Paths & Environment ──
-        g2 = QGroupBox("Paths & Environment")
+        # ── Paths and Environment ──
+        g2 = QGroupBox("Paths and Environment")
         g2v = QGridLayout(g2)
         g2v.setHorizontalSpacing(10)
         g2v.setVerticalSpacing(8)
@@ -1102,78 +1102,82 @@ class PITCPanel(QWidget):
         self.dl_ed = QLineEdit(r"D:\PITC_PDFs")
         g2v.addWidget(lbl_dl, 0, 0)
         g2v.addWidget(self.dl_ed, 0, 1)
+        btn_browse_dl = QPushButton("Browse")
+        btn_browse_dl.clicked.connect(self._browse_download_dir)
+        g2v.addWidget(btn_browse_dl, 0, 2)
+
         lbl_pr = QLabel("Chrome Profile:")
         self.pr_ed = QLineEdit(r"C:\ChromeProfiles\PITC")
         g2v.addWidget(lbl_pr, 1, 0)
         g2v.addWidget(self.pr_ed, 1, 1)
+        btn_browse_pr = QPushButton("Browse")
+        btn_browse_pr.clicked.connect(self._browse_profile_dir)
+        g2v.addWidget(btn_browse_pr, 1, 2)
+        g2v.setColumnStretch(1, 1)
         layout.addWidget(g2)
 
-        # ── DISCO & Report Type Row ──
-        g_disco = QGroupBox("Select DISCO")
-        g_disco_h = QHBoxLayout(g_disco)
+        # ── Report and Filter Settings ──
+        g_rep = QGroupBox("Report and Filter Settings")
+        g_rep_layout = QGridLayout(g_rep)
+        g_rep_layout.setHorizontalSpacing(10)
+        g_rep_layout.setVerticalSpacing(8)
+
+        # Row 0: DISCO and Report Type
+        g_rep_layout.addWidget(QLabel("Select DISCO:"), 0, 0)
         self.disco_cb = QComboBox()
         self.disco_cb.addItems(self.DISCOS)
         self.disco_cb.setCurrentText("PESCO")
         self.disco_cb.currentTextChanged.connect(self._on_disco_changed)
-        g_disco_h.addWidget(self.disco_cb)
+        g_rep_layout.addWidget(self.disco_cb, 0, 1)
 
-        g_rep = QGroupBox("Report Type")
-        g_rep_h = QHBoxLayout(g_rep)
+        g_rep_layout.addWidget(QLabel("Report Type:"), 0, 2)
         self.report_cb = QComboBox()
         self.report_cb.addItems(self.REPORT_LABELS)
         default_idx = self.REPORT_LABELS.index("Billing Adjustment") if "Billing Adjustment" in self.REPORT_LABELS else 2
         self.report_cb.setCurrentIndex(default_idx)
         self.report_cb.currentTextChanged.connect(self._on_report_type_changed)
-        g_rep_h.addWidget(self.report_cb)
+        g_rep_layout.addWidget(self.report_cb, 0, 3)
 
-        row_cfg1 = QHBoxLayout()
-        row_cfg1.setSpacing(10)
-        row_cfg1.addWidget(g_disco, 1)
-        row_cfg1.addWidget(g_rep, 2)
-        layout.addLayout(row_cfg1)
-
-        # ── Matching Pages & Page Range Row ──
-        g_match = QGroupBox("Matching Pages")
-        g_match_h = QHBoxLayout(g_match)
-        g_match_h.addWidget(QLabel("Download:"))
+        # Row 1: Matching Pages and Optional Page Range
+        g_rep_layout.addWidget(QLabel("Download:"), 1, 0)
         self.match_cb = QComboBox()
         self.match_cb.addItem("First matching page", "first")
         self.match_cb.addItem("Second matching page", "second")
         self.match_cb.addItem("All matching pages", "all")
         self.match_cb.setToolTip("Controls which pages are kept when month/amount matches multiple pages.")
-        g_match_h.addWidget(self.match_cb)
+        g_rep_layout.addWidget(self.match_cb, 1, 1)
 
-        g_pages = QGroupBox("Optional Page Range")
-        g_pages_h = QGridLayout(g_pages)
-        g_pages_h.setHorizontalSpacing(8)
-        g_pages_h.setVerticalSpacing(6)
-        g_pages_h.addWidget(QLabel("From:"), 0, 0)
+        page_range_h = QHBoxLayout()
+        page_range_h.setSpacing(6)
+        page_range_h.addWidget(QLabel("From:"))
         self.page_from_ed = QLineEdit()
         self.page_from_ed.setPlaceholderText("e.g. 2")
-        g_pages_h.addWidget(self.page_from_ed, 0, 1)
-        g_pages_h.addWidget(QLabel("To:"), 0, 2)
+        self.page_from_ed.setFixedWidth(55)
+        page_range_h.addWidget(self.page_from_ed)
+        page_range_h.addWidget(QLabel("To:"))
         self.page_to_ed = QLineEdit()
         self.page_to_ed.setPlaceholderText("e.g. 4")
-        g_pages_h.addWidget(self.page_to_ed, 0, 3)
-        g_pages_h.setColumnStretch(1, 1)
-        g_pages_h.setColumnStretch(3, 1)
+        self.page_to_ed.setFixedWidth(55)
+        page_range_h.addWidget(self.page_to_ed)
+        page_range_h.addStretch()
+        g_rep_layout.addWidget(QLabel("Page Range:"), 1, 2)
+        g_rep_layout.addLayout(page_range_h, 1, 3)
 
-        row_cfg2 = QHBoxLayout()
-        row_cfg2.setSpacing(10)
-        row_cfg2.addWidget(g_match, 1)
-        row_cfg2.addWidget(g_pages, 1)
-        layout.addLayout(row_cfg2)
+        g_rep_layout.setColumnStretch(1, 1)
+        g_rep_layout.setColumnStretch(3, 1)
+        layout.addWidget(g_rep)
 
-        # ── Timing & Print Settings ──
-        g3 = QGroupBox("Timing & Print Settings")
+        # ── Timing and Print Settings ──
+        g3 = QGroupBox("Timing and Print Settings")
         g3h = QGridLayout(g3)
-        g3h.setHorizontalSpacing(8)
-        g3h.setVerticalSpacing(6)
+        g3h.setHorizontalSpacing(10)
+        g3h.setVerticalSpacing(8)
 
         def spin(val, mn=1, mx=9999):
             s = QSpinBox()
             s.setRange(mn, mx)
             s.setValue(val)
+            s.setFixedWidth(65)
             return s
 
         g3h.addWidget(QLabel("Restart:"), 0, 0)
@@ -1184,17 +1188,17 @@ class PITCPanel(QWidget):
         self.sp_warmup = spin(0, 0, 200)
         g3h.addWidget(self.sp_warmup, 0, 3)
 
-        g3h.addWidget(QLabel("Wait (s):"), 1, 0)
+        g3h.addWidget(QLabel("Wait (s):"), 0, 4)
         self.sp_pwait = spin(6, 1, 200)
-        g3h.addWidget(self.sp_pwait, 1, 1)
+        g3h.addWidget(self.sp_pwait, 0, 5)
 
-        g3h.addWidget(QLabel("Print X:"), 1, 2)
+        g3h.addWidget(QLabel("Print X:"), 1, 0)
         self.sp_px = spin(30)
-        g3h.addWidget(self.sp_px, 1, 3)
+        g3h.addWidget(self.sp_px, 1, 1)
 
-        g3h.addWidget(QLabel("Print Y:"), 2, 0)
+        g3h.addWidget(QLabel("Print Y:"), 1, 2)
         self.sp_py = spin(165)
-        g3h.addWidget(self.sp_py, 2, 1)
+        g3h.addWidget(self.sp_py, 1, 3)
 
         layout.addWidget(g3)
 
@@ -1217,8 +1221,8 @@ class PITCPanel(QWidget):
 
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
-        self.log_box.setMinimumHeight(90)
-        layout.addWidget(self.log_box)
+        self.log_box.setMinimumHeight(65)
+        layout.addWidget(self.log_box, 1)
 
         # Load saved settings
         try:
@@ -1286,6 +1290,14 @@ class PITCPanel(QWidget):
     def pick_excel(self):
         f, _ = QFileDialog.getOpenFileName(self, "Excel File", "", "Excel (*.xlsx)")
         if f: self.excel_ed.setText(f)
+
+    def _browse_download_dir(self):
+        p = QFileDialog.getExistingDirectory(self, "Select Download Folder", self.dl_ed.text())
+        if p: self.dl_ed.setText(p)
+
+    def _browse_profile_dir(self):
+        p = QFileDialog.getExistingDirectory(self, "Select Chrome Profile Folder", self.pr_ed.text())
+        if p: self.pr_ed.setText(p)
 
     def get_template(self):
         download_template(

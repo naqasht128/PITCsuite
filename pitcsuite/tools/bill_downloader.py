@@ -46,10 +46,47 @@ class BillSoftPanel(QWidget):
         layout.addWidget(hline())
 
         g = QGroupBox("Inputs")
-        iv = QVBoxLayout(g)
-        iv.addLayout(self._excel_row())
-        iv.addLayout(self._url_row())
-        iv.addLayout(self._out_row())
+        iv = QGridLayout(g)
+        iv.setHorizontalSpacing(10)
+        iv.setVerticalSpacing(8)
+
+        # Row 0: Excel File
+        iv.addWidget(QLabel("Excel File:"), 0, 0)
+        self.ed_excel = QLineEdit()
+        self.ed_excel.setReadOnly(True)
+        self.ed_excel.setPlaceholderText("Select Excel file (*.xlsx)...")
+        iv.addWidget(self.ed_excel, 0, 1)
+        b_excel = QPushButton("Browse")
+        b_excel.clicked.connect(lambda: (p := QFileDialog.getOpenFileName(self,"Excel","","Excel (*.xlsx)")[0]) and self.ed_excel.setText(p))
+        iv.addWidget(b_excel, 0, 2)
+
+        # Row 1: Bills URL
+        iv.addWidget(QLabel("Bills URL:"), 1, 0)
+        self.ed_url = QLineEdit(self._load_saved_url())
+        self.ed_url.setReadOnly(True)
+        self.ed_url.returnPressed.connect(lambda: self.toggle_url() if self.btn_url.text() == "Save" else None)
+        iv.addWidget(self.ed_url, 1, 1)
+        self.btn_url = QPushButton("Edit")
+        self.btn_url.clicked.connect(self.toggle_url)
+        iv.addWidget(self.btn_url, 1, 2)
+
+        # Row 2: Output Folder
+        iv.addWidget(QLabel("Output Folder:"), 2, 0)
+        self.ed_out = QLineEdit("D:\\BillsPDF")
+        self.ed_out.setReadOnly(True)
+        iv.addWidget(self.ed_out, 2, 1)
+
+        out_btns = QHBoxLayout()
+        out_btns.setSpacing(6)
+        c_btn = QPushButton("Browse")
+        c_btn.clicked.connect(lambda: (p := QFileDialog.getExistingDirectory(self,"Output")) and self.ed_out.setText(p))
+        out_btns.addWidget(c_btn)
+        o_btn = QPushButton("Open")
+        o_btn.clicked.connect(lambda: os.startfile(self.ed_out.text()) if os.path.exists(self.ed_out.text()) else None)
+        out_btns.addWidget(o_btn)
+        iv.addLayout(out_btns, 2, 2)
+
+        iv.setColumnStretch(1, 1)
         layout.addWidget(g)
 
         og = QGroupBox("Options")
@@ -79,9 +116,11 @@ class BillSoftPanel(QWidget):
 
         lg = QGroupBox("Logs")
         lv = QVBoxLayout(lg)
-        self.log_box = QTextEdit(); self.log_box.setReadOnly(True); self.log_box.setFixedHeight(100)
+        self.log_box = QTextEdit()
+        self.log_box.setReadOnly(True)
+        self.log_box.setMinimumHeight(65)
         lv.addWidget(self.log_box)
-        layout.addWidget(lg)
+        layout.addWidget(lg, 1)
 
     def _excel_row(self):
         r = QHBoxLayout(); r.addWidget(QLabel("Excel File:"))

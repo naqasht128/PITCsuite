@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
-    QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+    QFileDialog, QGroupBox, QHBoxLayout, QGridLayout, QLabel, QLineEdit, QMessageBox,
     QProgressBar, QPushButton, QTextEdit, QVBoxLayout, QWidget,
 )
 
@@ -298,14 +298,70 @@ class PaymentExtract88LPanel(QWidget):
     def __init__(self):
         super().__init__(); self.worker = None; self._completion_shown = False
         layout = QVBoxLayout(self); layout.setSpacing(10); layout.addWidget(lbl("88L Payment Extractor", bold=True, color="#7eb8f7")); layout.addWidget(hline())
-        group = QGroupBox("Inputs"); form = QVBoxLayout(group)
-        self.excel_ed = self.add_path_row(form, "Excel File:", False, "Excel (*.xlsx)")
-        template = QPushButton("⬇  Download Template"); template.clicked.connect(self.get_template); form.itemAt(form.count() - 1).layout().addWidget(template)
-        self.root_ed = self.add_path_row(form, "88L Folder:", True, "")
-        self.output_ed = self.add_path_row(form, "Output Folder:", True, "")
+        
+        group = QGroupBox("Inputs")
+        form = QGridLayout(group)
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+
+        # Row 0: Excel File
+        form.addWidget(QLabel("Excel File:"), 0, 0)
+        self.excel_ed = QLineEdit()
+        self.excel_ed.setReadOnly(True)
+        self.excel_ed.setPlaceholderText("Select Excel workbook (*.xlsx)...")
+        form.addWidget(self.excel_ed, 0, 1)
+        b_excel = QPushButton("Browse")
+        b_excel.clicked.connect(lambda: self.choose_file(self.excel_ed, "Excel (*.xlsx)"))
+        form.addWidget(b_excel, 0, 2)
+
+        # Row 1: 88L Folder
+        form.addWidget(QLabel("88L Folder:"), 1, 0)
+        self.root_ed = QLineEdit()
+        self.root_ed.setReadOnly(True)
+        self.root_ed.setPlaceholderText("Select folder containing 88L reports...")
+        form.addWidget(self.root_ed, 1, 1)
+        b_root = QPushButton("Browse")
+        b_root.clicked.connect(lambda: self.choose_folder(self.root_ed))
+        form.addWidget(b_root, 1, 2)
+
+        # Row 2: Output Folder
+        form.addWidget(QLabel("Output Folder:"), 2, 0)
+        self.output_ed = QLineEdit()
+        self.output_ed.setReadOnly(True)
+        self.output_ed.setPlaceholderText("Select folder for extracted PDF outputs...")
+        form.addWidget(self.output_ed, 2, 1)
+        b_out = QPushButton("Browse")
+        b_out.clicked.connect(lambda: self.choose_folder(self.output_ed))
+        form.addWidget(b_out, 2, 2)
+
+        form.setColumnStretch(1, 1)
         layout.addWidget(group)
-        buttons = QHBoxLayout(); self.start_btn = QPushButton("▶  START"); self.start_btn.setStyleSheet(START_BTN); self.stop_btn = QPushButton("■  STOP"); self.stop_btn.setStyleSheet(STOP_BTN); self.stop_btn.setEnabled(False); self.start_btn.clicked.connect(self.start); self.stop_btn.clicked.connect(self.stop); buttons.addWidget(self.start_btn); buttons.addWidget(self.stop_btn); buttons.addStretch(); layout.addLayout(buttons)
-        self.progress = QProgressBar(); layout.addWidget(self.progress); self.log_box = QTextEdit(); self.log_box.setReadOnly(True); layout.addWidget(self.log_box)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        self.start_btn = QPushButton("▶  START")
+        self.start_btn.setStyleSheet(START_BTN)
+        self.stop_btn = QPushButton("■  STOP")
+        self.stop_btn.setStyleSheet(STOP_BTN)
+        self.stop_btn.setEnabled(False)
+        self.start_btn.clicked.connect(self.start)
+        self.stop_btn.clicked.connect(self.stop)
+        buttons.addWidget(self.start_btn)
+        buttons.addWidget(self.stop_btn)
+
+        template = QPushButton("📥 Download Template")
+        template.clicked.connect(self.get_template)
+        buttons.addWidget(template)
+
+        buttons.addStretch()
+        layout.addLayout(buttons)
+
+        self.progress = QProgressBar()
+        layout.addWidget(self.progress)
+        self.log_box = QTextEdit()
+        self.log_box.setReadOnly(True)
+        self.log_box.setMinimumHeight(65)
+        layout.addWidget(self.log_box, 1)
 
     def add_path_row(self, parent, label, folder, file_filter):
         row = QHBoxLayout(); row.addWidget(QLabel(label)); edit = QLineEdit(); edit.setReadOnly(True); edit.setProperty("preferred_width", 245); row.addWidget(edit, 1); button = QPushButton("Browse")

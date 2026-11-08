@@ -87,7 +87,7 @@ class AboutDialog(QDialog):
         title_lbl.setStyleSheet("color: #ffffff; font-size: 15pt; font-weight: bold; letter-spacing: 0.5px;")
         title_vbox.addWidget(title_lbl)
 
-        ver_lbl = QLabel(f"Version {get_current_version()} · Antigravity Edition")
+        ver_lbl = QLabel(f"Version {get_current_version()} · Suite Edition")
         ver_lbl.setStyleSheet("color: #858585; font-size: 8.5pt;")
         title_vbox.addWidget(ver_lbl)
         
@@ -326,7 +326,7 @@ class FramelessScrollArea(QScrollArea):
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.NoFrame)
         self.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._is_panning = False
         self._pan_start = None
@@ -405,7 +405,8 @@ class MainWindow(QMainWindow):
         outer.setSpacing(0)
 
         # 2. Antigravity Exact Activity Bar (48px Width)
-        self.nav_collapsed = True
+        settings = QSettings("TNDevelopers", "PITCSuite")
+        self.nav_collapsed = settings.value("sidebar_style", "compact") != "expanded"
         self.nav = QWidget()
         self.nav.setObjectName("navSidebar")
         self.nav.setStyleSheet("""
@@ -639,10 +640,10 @@ class MainWindow(QMainWindow):
             for qlbl in panel.findChildren(QLabel):
                 qlbl.setWordWrap(True)
 
-            # Prevent long file paths in comboboxes from blowing up layout width
+            # Allow comboboxes to naturally adjust and show their dropdown arrow
             for qcb in panel.findChildren(QComboBox):
-                qcb.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
-                qcb.setMinimumContentsLength(6)
+                qcb.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+                qcb.setMinimumContentsLength(8)
                 if qcb.view():
                     qcb.view().setTextElideMode(Qt.ElideMiddle)
                             
@@ -662,6 +663,7 @@ class MainWindow(QMainWindow):
             for chk in panel.findChildren(QCheckBox):
                 chk.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
                 
+            panel.setMinimumWidth(0)
             scroll = FramelessScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setWidget(panel)
@@ -682,28 +684,37 @@ class MainWindow(QMainWindow):
 
         self.switch(0)
 
-        # Check for updates in the background after 1.5 seconds
-        QTimer.singleShot(1500, lambda: check_for_updates(self, silent=True))
+        # Check for updates in the background after 1.5 seconds if enabled
+        settings = QSettings("TNDevelopers", "PITCSuite")
+        if settings.value("auto_update_check", True, type=bool):
+            QTimer.singleShot(1500, lambda: check_for_updates(self, silent=True))
 
         # Check if app was just updated to show What's New notes
         self._check_post_update()
 
     def _init_window_size(self):
-        """Restore saved window size or initialize to 800 x 700."""
+        """Restore saved window size or initialize according to launch preference (800 x 650 default)."""
         settings = QSettings("TNDevelopers", "PITCSuite")
-        saved_size = settings.value("window_size")
-        saved_geom = settings.value("window_geometry")
-        
-        if saved_geom and isinstance(saved_geom, (bytes, bytearray, QByteArray)):
-            try:
-                self.restoreGeometry(saved_geom)
-            except Exception:
-                pass
-                
-        if saved_size and isinstance(saved_size, QSize) and saved_size.isValid():
-            self.resize(saved_size)
-        elif not saved_geom:
-            self.resize(800, 700)
+        launch_mode = str(settings.value("launch_mode", "saved")).lower()
+
+        if launch_mode == "maximized":
+            self.showMaximized()
+            return
+
+        if launch_mode == "saved":
+            saved_geom = settings.value("window_geometry")
+            if saved_geom and isinstance(saved_geom, (bytes, bytearray, QByteArray)):
+                try:
+                    self.restoreGeometry(saved_geom)
+                except Exception:
+                    pass
+            saved_size = settings.value("window_size")
+            if saved_size and isinstance(saved_size, QSize) and saved_size.isValid():
+                self.resize(saved_size)
+                return
+
+        # Default size: 800 x 650
+        self.resize(800, 650)
 
     def _save_window_size(self):
         """Persist current window size and geometry so subsequent launches restore them."""
@@ -712,23 +723,58 @@ class MainWindow(QMainWindow):
             settings.setValue("window_size", self.size())
             settings.setValue("window_geometry", self.saveGeometry())
 
+    def set_sidebar_collapsed(self, collapsed: bool):
+        if self.nav_collapsed != collapsed:
+            self.toggle_nav()
+
+    def _on_theme_updated(self, theme_key, accent_key, font_size_key, density_key, font_family_key=None):
+        from pitcsuite.ui_helpers import THEMES, ACCENTS, NAV_STYLE
+        palette_data = THEMES.get(theme_key, THEMES["vesper"])
+        accent = ACCENTS.get(accent_key, ACCENTS["red"])
+        
+        self.nav.setStyleSheet(f"""
+            QWidget#navSidebar {{
+                background-color: {palette_data['nav_bg']};
+                border-right: 1px solid {palette_data['nav_border']};
+            }}
+        """)
+        
+        content = self.centralWidget().findChild(QWidget, "contentArea")
+        if content:
+            content.setStyleSheet(f"""
+                QWidget#contentArea {{
+                    background-color: {palette_data['window_bg']};
+                }}
+            """)
+
+        self.header_title.setStyleSheet(f"color: {palette_data['text_main']}; font-size: 13pt; font-weight: 600; letter-spacing: 0.3px;")
+        self.header_subtitle.setStyleSheet(f"color: {palette_data['text_muted']}; font-size: 8.5pt;")
+
+        self._apply_nav_state()
+
     def _adapt_responsive_ui(self, width: int, height: int):
-        """Dynamically adapt fonts, margins, and layout to window adjustments (Antigravity style)."""
+        """Dynamically adapt fonts, margins, and layout to window adjustments."""
+        from pitcsuite.ui_helpers import THEMES, get_current_theme_key
+        theme_key = get_current_theme_key()
+        palette_data = THEMES.get(theme_key, THEMES["vesper"])
+        text_main = palette_data.get("text_main", "#ffffff")
+        text_muted = palette_data.get("text_muted", "#858585")
+
         if width < 700 or height < 580:
-            self.header_title.setStyleSheet("color: #ffffff; font-size: 11pt; font-weight: 600; letter-spacing: 0.2px;")
-            self.header_subtitle.setStyleSheet("color: #858585; font-size: 7.5pt;")
+            self.header_title.setStyleSheet(f"color: {text_main}; font-size: 11pt; font-weight: 600; letter-spacing: 0.2px;")
+            self.header_subtitle.setStyleSheet(f"color: {text_muted}; font-size: 7.5pt;")
             self.content_layout.setContentsMargins(6, 4, 6, 4)
             self.content_layout.setSpacing(5)
             if not self.nav_collapsed and width < 650:
                 self.toggle_nav()
         elif width < 820:
-            self.header_title.setStyleSheet("color: #ffffff; font-size: 12pt; font-weight: 600; letter-spacing: 0.3px;")
-            self.header_subtitle.setStyleSheet("color: #858585; font-size: 8pt;")
+            self.header_title.setStyleSheet(f"color: {text_main}; font-size: 12pt; font-weight: 600; letter-spacing: 0.3px;")
+            self.header_subtitle.setStyleSheet(f"color: {text_muted}; font-size: 8pt;")
             self.content_layout.setContentsMargins(10, 6, 10, 6)
             self.content_layout.setSpacing(6)
         else:
-            self.header_title.setStyleSheet("color: #ffffff; font-size: 13pt; font-weight: 600; letter-spacing: 0.3px;")
-            self.header_subtitle.setStyleSheet("color: #858585; font-size: 8.5pt;")
+            self.header_title.setStyleSheet(f"color: {text_main}; font-size: 13pt; font-weight: 600; letter-spacing: 0.3px;")
+            self.header_subtitle.setStyleSheet(f"color: {text_muted}; font-size: 8.5pt;")
             self.content_layout.setContentsMargins(14, 8, 14, 8)
             self.content_layout.setSpacing(8)
 
@@ -752,18 +798,21 @@ class MainWindow(QMainWindow):
         self.header_title.setText(tool_info[0])
         self.header_subtitle.setText(tool_info[3] if len(tool_info) > 3 else "")
 
-        # Smooth moderate page transition animation (fade-in 180ms ease-out)
-        curr_widget = self.stack.currentWidget()
-        if curr_widget:
-            fade_effect = QGraphicsOpacityEffect(curr_widget)
-            curr_widget.setGraphicsEffect(fade_effect)
-            fade_anim = QPropertyAnimation(fade_effect, b"opacity")
-            fade_anim.setDuration(180)
-            fade_anim.setStartValue(0.3)
-            fade_anim.setEndValue(1.0)
-            fade_anim.setEasingCurve(QEasingCurve.OutCubic)
-            fade_anim.start(QAbstractAnimation.DeleteWhenStopped)
-            self._current_fade_anim = fade_anim
+        # Smooth moderate page transition animation (fade-in 180ms ease-out) if enabled
+        settings = QSettings("TNDevelopers", "PITCSuite")
+        smooth_anim = settings.value("smooth_anim", True, type=bool)
+        if smooth_anim:
+            curr_widget = self.stack.currentWidget()
+            if curr_widget:
+                fade_effect = QGraphicsOpacityEffect(curr_widget)
+                curr_widget.setGraphicsEffect(fade_effect)
+                fade_anim = QPropertyAnimation(fade_effect, b"opacity")
+                fade_anim.setDuration(180)
+                fade_anim.setStartValue(0.3)
+                fade_anim.setEndValue(1.0)
+                fade_anim.setEasingCurve(QEasingCurve.OutCubic)
+                fade_anim.start(QAbstractAnimation.DeleteWhenStopped)
+                self._current_fade_anim = fade_anim
 
         # Update active nav indicator (Antigravity left white border)
         for i, button in enumerate(self.nav_btns):
@@ -908,13 +957,15 @@ class MainWindow(QMainWindow):
         self.update_btn.setToolTip("Check for Updates")
         self.about_sidebar_btn.setToolTip("About PITC Suite")
         
+        from pitcsuite.ui_helpers import get_nav_style
+        current_nav_style = get_nav_style()
         for button, name in zip(self.nav_btns, self.nav_names):
             if self.nav_collapsed:
                 button.setText("")
-                button.setStyleSheet(NAV_STYLE + "\nQPushButton { padding: 8px 0; text-align: center; margin: 1px 0px; }")
+                button.setStyleSheet(current_nav_style + "\nQPushButton { padding: 8px 0; text-align: center; margin: 1px 0px; }")
             else:
                 button.setText(name)
-                button.setStyleSheet(NAV_STYLE)
+                button.setStyleSheet(current_nav_style)
 
     def closeEvent(self, event):
         self._save_window_size()

@@ -4,14 +4,13 @@ from PySide6.QtWidgets import QApplication
 
 from pitcsuite.icons import app_icon
 from pitcsuite.main_window import MainWindow
-from pitcsuite.ui_helpers import DARK_STYLE, configure_app
+from pitcsuite.ui_helpers import apply_theme
 
 
 def main():
     app = QApplication.instance() or QApplication(sys.argv)
-    configure_app(app)
+    apply_theme(app)
     app.setWindowIcon(app_icon())
-    app.setStyleSheet(DARK_STYLE)
     win = MainWindow()
     win.show()
     return app.exec()
