@@ -751,6 +751,13 @@ class PITCWorker(QThread):
             cannot reach the Print button.
             """
             try:
+                try:
+                    alert = drv.switch_to.alert
+                    txt = alert.text
+                    alert.accept()
+                    return txt or "data not exist/Wrong AC No."
+                except Exception:
+                    pass
                 text = drv.find_element(By.TAG_NAME, "body").text
             except Exception:
                 return None
@@ -813,8 +820,7 @@ class PITCWorker(QThread):
                 return "data not exist/Wrong AC No."
 
         def return_to_search_page(drv, wt):
-            """Immediately close Crystal Report viewer tab/popup and ensure browser is on search page."""
-            # 1. Close all extra tabs (Crystal Report viewer) until only 1 tab remains
+            """Immediately close Crystal Report viewer tab/popup and ensure browser focus is on the main window."""
             try:
                 while len(drv.window_handles) > 1:
                     try:
@@ -823,32 +829,6 @@ class PITCWorker(QThread):
                     except Exception:
                         break
                 drv.switch_to.window(drv.window_handles[0])
-            except Exception:
-                pass
-
-            # 2. Check if search box is already present on current page
-            try:
-                if drv.find_elements(By.NAME, "ctl00$ContentPlaceHolder1$txtReferenceNumber"):
-                    return
-            except Exception:
-                pass
-
-            # 3. If on report details page (BillingDetails.aspx), go back to search page
-            try:
-                drv.back()
-                WebDriverWait(drv, 4, poll_frequency=0.2).until(
-                    EC.presence_of_element_located((By.NAME, "ctl00$ContentPlaceHolder1$txtReferenceNumber"))
-                )
-                return
-            except Exception:
-                pass
-
-            # 4. Fallback: navigate directly to cp.pitc.com.pk
-            try:
-                drv.get("https://cp.pitc.com.pk")
-                WebDriverWait(drv, 6, poll_frequency=0.2).until(
-                    EC.presence_of_element_located((By.NAME, "ctl00$ContentPlaceHolder1$txtReferenceNumber"))
-                )
             except Exception:
                 pass
 
@@ -882,22 +862,37 @@ class PITCWorker(QThread):
                 report_opened = False
                 report_tab_closed = False
 
+                already_on_report = bool(
+                    href_kw.lower() in (driver.current_url or "").lower()
+                    or driver.find_elements(By.ID, "ctl00_ContentPlaceHolder1_btnPrint")
+                    or driver.find_elements(By.NAME, "ctl00$ContentPlaceHolder1$btnPrint")
+                )
+
                 box = wait.until(EC.element_to_be_clickable((By.NAME, "ctl00$ContentPlaceHolder1$txtReferenceNumber")))
                 box.send_keys(Keys.CONTROL, "a", Keys.BACKSPACE)
-                box.send_keys(str(ac))
+                clean_ac = str(ac).strip().replace("\r", "").replace("\n", "")
+                box.send_keys(clean_ac)
+                time.sleep(0.2)
 
-                wait.until(EC.element_to_be_clickable((By.NAME, "ctl00$ContentPlaceHolder1$btnGo"))).click()
-                time.sleep(2)
+                old_btn = None
+                try:
+                    old_btn = driver.find_element(By.NAME, "ctl00$ContentPlaceHolder1$btnGo")
+                except Exception:
+                    pass
 
-                missing_status = wait_for_report_or_missing(driver, href_kw)
-                if missing_status:
-                    status.value = missing_status
-                    self.log.emit(f"→ {missing_status}; print skipped")
-                else:
-                    open_report_link(driver, wait, href_kw)
-                    report_opened = True
+                btn_go = wait.until(EC.element_to_be_clickable((By.NAME, "ctl00$ContentPlaceHolder1$btnGo")))
+                driver.execute_script("arguments[0].click();", btn_go)
+
+                if already_on_report:
+                    if old_btn:
+                        try:
+                            WebDriverWait(driver, 3, poll_frequency=0.1).until(EC.staleness_of(old_btn))
+                        except Exception:
+                            pass
+                    time.sleep(0.5)
+
                     try:
-                        WebDriverWait(driver, 15).until(
+                        WebDriverWait(driver, 15, poll_frequency=0.2).until(
                             lambda drv: missing_ac_status(drv) or ac_found_on_page(drv, ac)
                         )
                     except TimeoutException:
@@ -907,9 +902,40 @@ class PITCWorker(QThread):
                     if missing_status or not ac_found_on_page(driver, ac):
                         missing_status = missing_status or "data not exist/Wrong AC No."
                         status.value = missing_status
-                        self.log.emit(f"→ {missing_status}; AC not found on report page; print skipped")
+                        self.log.emit(f"→ {missing_status}; print skipped")
                     else:
-                        wait.until(EC.element_to_be_clickable((By.ID, "ctl00_ContentPlaceHolder1_btnPrint"))).click()
+                        try:
+                            print_btn = wait.until(EC.element_to_be_clickable((By.ID, "ctl00_ContentPlaceHolder1_btnPrint")))
+                        except Exception:
+                            print_btn = wait.until(EC.element_to_be_clickable((By.NAME, "ctl00$ContentPlaceHolder1$btnPrint")))
+                        driver.execute_script("arguments[0].click();", print_btn)
+                else:
+                    time.sleep(1.5)
+                    missing_status = wait_for_report_or_missing(driver, href_kw)
+                    if missing_status:
+                        status.value = missing_status
+                        self.log.emit(f"→ {missing_status}; print skipped")
+                    else:
+                        open_report_link(driver, wait, href_kw)
+                        report_opened = True
+                        try:
+                            WebDriverWait(driver, 15, poll_frequency=0.2).until(
+                                lambda drv: missing_ac_status(drv) or ac_found_on_page(drv, ac)
+                            )
+                        except TimeoutException:
+                            pass
+
+                        missing_status = missing_ac_status(driver)
+                        if missing_status or not ac_found_on_page(driver, ac):
+                            missing_status = missing_status or "data not exist/Wrong AC No."
+                            status.value = missing_status
+                            self.log.emit(f"→ {missing_status}; AC not found on report page; print skipped")
+                        else:
+                            try:
+                                print_btn = wait.until(EC.element_to_be_clickable((By.ID, "ctl00_ContentPlaceHolder1_btnPrint")))
+                            except Exception:
+                                print_btn = wait.until(EC.element_to_be_clickable((By.NAME, "ctl00$ContentPlaceHolder1$btnPrint")))
+                            driver.execute_script("arguments[0].click();", print_btn)
 
                 if missing_status:
                     wb.save(self.excel)
