@@ -1,3 +1,3 @@
-• **UI Changes & Default Styling:** Set Vesper theme, Electric Blue accent, Inter typography, Standard UI scale (8.5pt), and Compact density as application defaults.
-• **Added Customization Tab under Settings:** Added dedicated Personalization and Customization tab in Settings for real-time live preview and configuration of themes, accent palettes, font scaling, density, activity bar mode, and window launch behavior.
-• **Desktop Icon Resolution:** Packaged standalone pitcsuite_icon.ico directly with installer, configured desktop and start menu shortcuts with explicit icon targets, and automated shell icon cache refresh on launch.
+• **E/Bills Downloader Crash Fix:** Resolved crash when processing bills caused by PyMuPDF 2.0 ONNX layout model lookup (missing layout_rf2.4.1+imf1.yaml resource).
+• **Dependency & Build Stabilization:** Pinned PyMuPDF to <2.0.0 and actively excluded unused ONNX layout models from PyInstaller builds to keep binary lightweight and fast.
+• **Resilient PDF Formatting:** Isolated A4 scaling and Sr. No. stamping to prevent individual PDF formatting issues from halting multi-account batch downloads.
