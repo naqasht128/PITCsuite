@@ -576,7 +576,7 @@ class SettingsPanel(QWidget):
     def save_credentials(self):
         username = self.user_ed.text().strip()
         password = self.pass_ed.text().strip()
-        otp_secret = self.otp_ed.text().strip()
+        otp_secret = re.sub(r"[^A-Za-z2-7]", "", self.otp_ed.text()).upper()
         disco = self.disco_cb.currentText().strip() or "PESCO"
 
         if not username or not password:
