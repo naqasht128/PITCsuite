@@ -81,7 +81,7 @@ def suggest_next_version(current: str) -> str:
         return f"{current}.1"
 
 
-def update_version_files(new_version: str):
+def update_version_files(new_version: str, update_notes: bool = True):
     """Write new version into pitcsuite/__init__.py, installer.iss, and README.md."""
     # 1. Update pitcsuite/__init__.py
     init_content = INIT_PY.read_text(encoding="utf-8")
@@ -125,26 +125,29 @@ def update_version_files(new_version: str):
             print(f"  ✔ Updated README.md version badge: {new_version}")
 
     # 4. Generate clean RELEASE_NOTES.md (eliminates GitHub compare links)
-    rn_file = ROOT_DIR / "RELEASE_NOTES.md"
-    bullets = []
-    try:
-        from pitcsuite.auto_updater import get_release_notes
-        bullets = get_release_notes(new_version)
-    except Exception:
-        pass
+    if update_notes:
+        rn_file = ROOT_DIR / "RELEASE_NOTES.md"
+        bullets = []
+        try:
+            from pitcsuite.auto_updater import get_release_notes
+            bullets = get_release_notes(new_version)
+        except Exception:
+            pass
 
-    if bullets:
-        cleaned_bullets = []
-        for b in bullets:
-            c = re.sub(r'^[•\-\*\d\.\)\s]+', '', b).strip()
-            c = re.sub(r'</?code>', '`', c)
-            c = re.sub(r'</?[bi]>', '**', c)
-            cleaned_bullets.append(c)
-        content = "\n".join(f"• {b}" for b in cleaned_bullets)
+        if bullets:
+            cleaned_bullets = []
+            for b in bullets:
+                c = re.sub(r'^[•\-\*\d\.\)\s]+', '', b).strip()
+                c = re.sub(r'</?code>', '`', c)
+                c = re.sub(r'</?[bi]>', '**', c)
+                cleaned_bullets.append(c)
+            content = "\n".join(f"• {b}" for b in cleaned_bullets)
+        else:
+            content = f"• Performance improvements, enhancements, and stability updates in v{new_version}"
+        rn_file.write_text(content, encoding="utf-8")
+        print(f"  ✔ Generated clean RELEASE_NOTES.md with {len(bullets) if bullets else 1} item(s)")
     else:
-        content = f"• Performance improvements, enhancements, and stability updates in v{new_version}"
-    rn_file.write_text(content, encoding="utf-8")
-    print(f"  ✔ Generated clean RELEASE_NOTES.md with {len(bullets) if bullets else 1} item(s)")
+        print("  ✔ Preserved existing RELEASE_NOTES.md (--no-notes specified)")
 
 
 def verify_python_syntax():
@@ -179,6 +182,7 @@ def main():
     parser.add_argument("version", nargs="?", help="New version number (e.g. 2.8.92)")
     parser.add_argument("-m", "--message", default="", help="Release note / commit message")
     parser.add_argument("--skip-tests", action="store_true", help="Skip Python syntax pre-compilation check")
+    parser.add_argument("--no-notes", action="store_true", help="Do not update RELEASE_NOTES.md")
     args = parser.parse_args()
 
     print("\n" + "=" * 60)
@@ -218,7 +222,7 @@ def main():
 
     # 2. Update version files
     print(f"\n[Step 2/5] Updating version numbers to {target_ver}...")
-    update_version_files(target_ver)
+    update_version_files(target_ver, update_notes=not args.no_notes)
 
     # 3. Git Stage & Commit
     print("\n[Step 3/5] Staging code changes & committing...")

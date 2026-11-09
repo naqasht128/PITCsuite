@@ -2,7 +2,7 @@
 #define AppPublisher "TN Developers Co."
 #define AppExeName "pitcsuite.exe"
 #ifndef AppVersion
-#define AppVersion "2.8.107"
+#define AppVersion "2.8.108"
 #endif
 
 [Setup]
