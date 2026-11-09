@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import time
 import base64
@@ -18,6 +19,15 @@ from pitcsuite.ui_helpers import lbl, hline, START_BTN, STOP_BTN, notify
 from pitcsuite.templates import download_template
 from pitcsuite.config import config_path as _config_path
 
+import datetime as _dt
+try:
+    import pymupdf as fitz
+except ImportError:
+    try:
+        import fitz
+    except ImportError:
+        fitz = None
+
 REPORT_HREF = {
     "meter":      "MeterReadingAndConsumption",
     "billing":    "BillingDetails",
@@ -30,6 +40,413 @@ REPORT_HREF = {
 # digit.  Accept differences of up to 9 rupees when locating and highlighting
 # the requested amount.
 AMOUNT_DIFFERENCE_TOLERANCE = 9
+
+
+class AmountNotFoundError(Exception):
+    pass
+
+
+class MonthNotFoundError(Exception):
+    pass
+
+
+class NoMatchError(Exception):
+    pass
+
+
+def format_month(val):
+    if isinstance(val, _dt.datetime):
+        return val.strftime("%b - %Y")
+    s = str(val).strip()
+    for fmt in ("%b-%y", "%b-%Y", "%m-%y", "%m-%Y", "%b %y", "%b %Y", "%m/%y", "%m/%Y", "%d-%m-%Y", "%Y-%m"):
+        try:
+            return _dt.datetime.strptime(s, fmt).strftime("%b - %Y")
+        except Exception:
+            pass
+    return s
+
+
+def amount_as_integer(value):
+    """Convert an amount to whole rupees, ignoring decimal places."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return int(round(value))
+        except Exception:
+            return None
+    try:
+        from decimal import Decimal, InvalidOperation
+        raw = str(value).replace("\u00a0", " ").strip()
+        raw = re.sub(r"(?<=\d)\s+(?=[\d,])", "", raw)
+        if raw.startswith("(") and raw.endswith(")"):
+            raw = "-" + raw[1:-1]
+        elif raw.endswith("-"):
+            raw = "-" + raw[:-1]
+        match = re.search(r"[-+]?\d[\d,]*(?:\.\d+)?", raw)
+        if not match:
+            return None
+        return int(round(float(Decimal(match.group(0).replace(",", "")))))
+    except Exception:
+        return None
+
+
+def amount_matches(value, amount, tolerance=AMOUNT_DIFFERENCE_TOLERANCE, allow_abs=True):
+    """Return True when whole-rupee amounts differ by at most tolerance."""
+    v = amount_as_integer(value)
+    t = amount_as_integer(amount)
+    if v is None or t is None:
+        return False
+    if abs(v - t) <= tolerance:
+        return True
+    if allow_abs and abs(abs(v) - abs(t)) <= tolerance:
+        return True
+    return False
+
+
+def get_column_boundaries(page, report_key=None):
+    """
+    Identify table boundaries, allowed column intervals, and forbidden column intervals for the page.
+    Returns (is_billing, is_adjustment, allowed_intervals, forbidden_intervals, y_data_min, y_data_max).
+    """
+    page_text = page.get_text("text").lower()
+
+    is_adjustment = (
+        report_key == "adjustment" or
+        "billing adjustment" in page_text or
+        "adjustment details" in page_text
+    )
+    is_billing = (
+        not is_adjustment and (
+            report_key == "billing" or
+            "billing details" in page_text or
+            "amount adjusted" in page_text
+        )
+    )
+
+    # Extract vertical lines from vector drawings
+    v_lines = []
+    try:
+        for d in page.get_drawings():
+            for item in d.get("items", []):
+                if item[0] == "l":
+                    p1, p2 = item[1], item[2]
+                    if abs(p1.x - p2.x) < 1.5 and abs(p1.y - p2.y) > 20:
+                        v_lines.append(round(p1.x, 1))
+    except Exception:
+        pass
+    v_lines = sorted(list(set(v_lines)))
+
+    KNOWN_HEADER_KEYWORDS = {
+        "BILLING", "MONTH", "STATUS", "TARIFF", "OPENING", "BALANCE",
+        "UNITS", "BILLED", "INSTALLMENT", "FPA", "NORMAL", "DETECTED", "AUDIT",
+        "AMOUNT", "ADJUSTED", "TOTAL", "PAYABLE", "CONSUMMER", "CURRENT",
+        "SUBSIDY", "RECEIVABLE", "CHARGES", "DETAILS", "BATCH", "TRANS"
+    }
+
+    words = page.get_text("words")
+    header_words = [
+        w for w in words
+        if 60 <= w[1] <= 165
+        and amount_as_integer(w[4]) is None
+        and any(k in w[4].upper() for k in KNOWN_HEADER_KEYWORDS)
+    ]
+    y_data_min = (max([w[3] for w in header_words]) + 1.0) if header_words else 115.0
+
+    footer_candidates = [
+        w[1] for w in words
+        if w[1] > 480 and any(k in w[4].lower() for k in ["valid", "legal", "signature", "approval", "pesco"])
+    ]
+    y_data_max = (min(footer_candidates) - 2.0) if footer_candidates else (page.rect.height - 30.0)
+
+    def enclosing_v_lines(x):
+        if not v_lines:
+            return None, None
+        left = max([vl for vl in v_lines if vl <= x], default=None)
+        right = min([vl for vl in v_lines if vl >= x], default=None)
+        return left, right
+
+    allowed = []
+    forbidden = []
+
+    if is_billing:
+        # In Billing Details:
+        # The correct columns where amount highlighting is needed: NORMAL, DETECTED, AUDIT.
+        # Amounts in OPENING BALANCE, TOTAL PAYABLE CONSUMMER, and Total Receivable must NEVER be highlighted.
+        for w in header_words:
+            txt = w[4].upper()
+            x_mid = (w[0] + w[2]) / 2
+            left_l, right_l = enclosing_v_lines(x_mid)
+            interval = (left_l, right_l) if (left_l is not None and right_l is not None and right_l > left_l) else (w[0] - 15, w[2] + 15)
+
+            if any(k == txt or f" {k} " in f" {txt} " for k in ["NORMAL", "DETECTED", "AUDIT"]):
+                allowed.append(interval)
+            elif any(k in txt for k in ["OPENING", "BALANCE", "PAYABLE", "CONSUMMER", "RECEIVABLE"]):
+                forbidden.append(interval)
+
+        if allowed:
+            allowed.sort(key=lambda x: x[0])
+            merged = [allowed[0]]
+            for cur in allowed[1:]:
+                prev = merged[-1]
+                if cur[0] <= prev[1] + 2.0:
+                    merged[-1] = (prev[0], max(prev[1], cur[1]))
+                else:
+                    merged.append(cur)
+            allowed = merged
+        else:
+            # Fallback coordinates for standard PITC Billing Details landscape report (width 841)
+            allowed = [(455.0, 612.0)]
+
+        if forbidden:
+            forbidden.sort(key=lambda x: x[0])
+            merged_f = [forbidden[0]]
+            for cur in forbidden[1:]:
+                prev = merged_f[-1]
+                if cur[0] <= prev[1] + 2.0:
+                    merged_f[-1] = (prev[0], max(prev[1], cur[1]))
+                else:
+                    merged_f.append(cur)
+            forbidden = merged_f
+        else:
+            forbidden = [(195.0, 262.0), (611.0, 690.0), (745.0, 815.0)]
+
+    elif is_adjustment:
+        # In Billing Adjustment Detail, correct column is TOTAL
+        for w in header_words:
+            txt = w[4].upper()
+            if "TOTAL" in txt:
+                x_mid = (w[0] + w[2]) / 2
+                left_l, right_l = enclosing_v_lines(x_mid)
+                interval = (left_l, right_l) if (left_l is not None and right_l is not None and right_l > left_l) else (w[0] - 20, w[2] + 20)
+                allowed.append(interval)
+                break
+        if not allowed:
+            allowed = [(600.0, 780.0)]
+
+    else:
+        allowed = None
+        forbidden = None
+
+    return is_billing, is_adjustment, allowed, forbidden, y_data_min, y_data_max
+
+
+def find_amount_rects_in_page(page, target_amount, allowed_intervals=None, forbidden_intervals=None, y_min=None, y_max=None):
+    rects = []
+    for word in page.get_text("words"):
+        w_rect = fitz.Rect(word[:4])
+        y_center = (w_rect.y0 + w_rect.y1) / 2
+        if y_min is not None and y_center < y_min:
+            continue
+        if y_max is not None and y_center > y_max:
+            continue
+
+        x_center = (w_rect.x0 + w_rect.x1) / 2
+
+        if allowed_intervals is not None:
+            in_allowed = any((start - 1.5) <= x_center <= (end + 1.5) for start, end in allowed_intervals)
+            if not in_allowed:
+                continue
+
+        if forbidden_intervals is not None:
+            in_forbidden = any((start - 1.5) <= x_center <= (end + 1.5) for start, end in forbidden_intervals)
+            if in_forbidden:
+                continue
+
+        if amount_matches(word[4], target_amount):
+            rects.append(w_rect)
+
+    return rects
+
+
+def find_page_highlights(page, month=None, amount=None, report_key=None):
+    """
+    Check if the page matches month and/or amount within the allowed columns,
+    and return (is_match, list_of_highlight_rects).
+    """
+    month_str = format_month(month) if month else None
+    has_month = bool(month_str)
+    target_amount = amount_as_integer(amount)
+    has_amount = target_amount is not None
+
+    if not has_month and not has_amount:
+        return True, []
+
+    is_billing, is_adjustment, allowed_intervals, forbidden_intervals, y_data_min, y_data_max = get_column_boundaries(page, report_key=report_key)
+
+    if has_month and has_amount:
+        month_rects = page.search_for(month_str)
+        if not month_rects:
+            alt = month_str.replace(" - ", "-") if " - " in month_str else month_str.replace("-", " - ")
+            month_rects = page.search_for(alt)
+        if not month_rects:
+            return False, []
+
+        for m_rect in month_rects:
+            y_pad = max(6.0, m_rect.height * 0.9)
+            row_y_min = m_rect.y0 - y_pad
+            row_y_max = m_rect.y1 + y_pad
+            amt_rects = find_amount_rects_in_page(
+                page, target_amount,
+                allowed_intervals=allowed_intervals,
+                forbidden_intervals=forbidden_intervals,
+                y_min=row_y_min, y_max=row_y_max
+            )
+            if amt_rects:
+                return True, [m_rect] + amt_rects
+
+        return False, []
+
+    elif has_amount and not has_month:
+        amt_rects = find_amount_rects_in_page(
+            page, target_amount,
+            allowed_intervals=allowed_intervals,
+            forbidden_intervals=forbidden_intervals,
+            y_min=y_data_min, y_max=y_data_max
+        )
+        if amt_rects:
+            return True, amt_rects
+        return False, []
+
+    elif has_month and not has_amount:
+        month_rects = page.search_for(month_str)
+        if not month_rects:
+            alt = month_str.replace(" - ", "-") if " - " in month_str else month_str.replace("-", " - ")
+            month_rects = page.search_for(alt)
+        if month_rects:
+            return True, month_rects
+        return False, []
+
+    return False, []
+
+
+def filter_pdf(input_pdf, output_pdf, month=None, amount=None, match_mode="first", report_key=None, log_emit=None, remove_input=False):
+    """
+    Inspect input_pdf, extract matching pages based on month/amount and match_mode,
+    apply highlights, and save to output_pdf.
+    Raises AmountNotFoundError, MonthNotFoundError, or NoMatchError if no matching page is found.
+    Removes input_pdf if distinct from output_pdf upon successful save when remove_input is True.
+    """
+    fitz_doc = fitz.open(input_pdf)
+    month_str = format_month(month) if month else None
+    has_month = bool(month_str)
+    target_amount = amount_as_integer(amount)
+    has_amount = target_amount is not None
+
+    matching_pages = []
+    page_highlights = {}
+
+    for p_idx in range(len(fitz_doc)):
+        page = fitz_doc[p_idx]
+        is_match, rects = find_page_highlights(page, month=month, amount=amount, report_key=report_key)
+        if is_match:
+            matching_pages.append(p_idx)
+            page_highlights[p_idx] = rects
+
+    if not matching_pages:
+        fitz_doc.close()
+        if has_amount and not has_month:
+            raise AmountNotFoundError("Amount not found")
+        elif has_month and not has_amount:
+            raise MonthNotFoundError("Month not found")
+        elif has_month and has_amount:
+            check_doc = fitz.open(input_pdf)
+            month_found = any(
+                bool(check_doc[p].search_for(month_str) or check_doc[p].search_for(month_str.replace(" - ", "-")))
+                for p in range(len(check_doc))
+            )
+            check_doc.close()
+            if not month_found:
+                raise MonthNotFoundError("Month not found")
+            else:
+                raise AmountNotFoundError("Amount not found")
+        else:
+            raise NoMatchError("No matching page found")
+
+    if match_mode == "second":
+        if len(matching_pages) < 2:
+            fitz_doc.close()
+            raise NoMatchError("Only one matching page found; second match does not exist")
+        selected_pages = matching_pages[1:2]
+    elif match_mode == "all":
+        selected_pages = matching_pages
+    else:
+        selected_pages = matching_pages[:1]
+
+    if log_emit:
+        log_emit(f"Selected {match_mode} matching page(s): {len(selected_pages)} of {len(matching_pages)} found")
+
+    new_doc = fitz.open()
+    for p_idx in selected_pages:
+        new_doc.insert_pdf(fitz_doc, from_page=p_idx, to_page=p_idx)
+        new_page = new_doc[-1]
+        for rect in page_highlights.get(p_idx, []):
+            new_page.add_highlight_annot(rect).update()
+
+    fitz_doc.close()
+
+    temp_out = output_pdf + ".tmp.pdf"
+    new_doc.save(temp_out, garbage=4, deflate=True, clean=True)
+    new_doc.close()
+
+    if os.path.exists(output_pdf):
+        os.remove(output_pdf)
+    os.replace(temp_out, output_pdf)
+
+    if remove_input and os.path.exists(input_pdf) and os.path.abspath(input_pdf) != os.path.abspath(output_pdf):
+        try:
+            os.remove(input_pdf)
+        except Exception:
+            pass
+
+    if log_emit:
+        log_emit("PDF filtered and highlighted")
+
+
+def filter_pdf_by_range(input_pdf, output_pdf, page_from, page_to, log_emit=None, remove_input=False):
+    doc = fitz.open(input_pdf)
+    total = len(doc)
+    if page_from < 1 or page_to < page_from or page_to > total:
+        doc.close()
+        raise Exception(f"Page range {page_from}-{page_to} is outside the downloaded PDF (1-{total})")
+    doc.select(list(range(page_from - 1, page_to)))
+    temp_out = output_pdf + ".tmp.pdf"
+    doc.save(temp_out, garbage=4, deflate=True, clean=True)
+    doc.close()
+
+    if os.path.exists(output_pdf):
+        os.remove(output_pdf)
+    os.replace(temp_out, output_pdf)
+
+    if remove_input and os.path.exists(input_pdf) and os.path.abspath(input_pdf) != os.path.abspath(output_pdf):
+        try:
+            os.remove(input_pdf)
+        except Exception:
+            pass
+
+    if log_emit:
+        log_emit(f"PDF filtered to pages {page_from}-{page_to}")
+
+
+def stamp_sr(pdf_path, sr):
+    doc = fitz.open(pdf_path)
+    total = len(doc)
+    for i, page in enumerate(doc, 1):
+        rect = page.rect
+        label = f"Sr No. {sr} ({i}/{total})"
+        label_width = fitz.get_text_length(label, fontname="hebo", fontsize=14)
+        page.insert_text(
+            (rect.width - label_width - 20, 24),
+            label,
+            fontsize=14,
+            fontname="hebo",
+            color=(0, 0, 0),
+        )
+    temp_stamped = pdf_path + ".stamped.pdf"
+    doc.save(temp_stamped, garbage=4, deflate=True, clean=True)
+    doc.close()
+    os.replace(temp_stamped, pdf_path)
+
 
 
 def kill_profile_chrome(profile_dir):
@@ -284,234 +701,6 @@ class PITCWorker(QThread):
                 name = f"{base_name}_{i}.pdf"
                 if not os.path.exists(os.path.join(dl, name)): return name
                 i += 1
-
-        def format_month(val):
-            if isinstance(val, _dt.datetime):
-                return val.strftime("%b - %Y")
-            s = str(val).strip()
-            for fmt in ("%b-%y", "%b-%Y", "%m-%y", "%m-%Y", "%b %y", "%b %Y", "%m/%y", "%m/%Y", "%d-%m-%Y", "%Y-%m"):
-                try:
-                    return _dt.datetime.strptime(s, fmt).strftime("%b - %Y")
-                except:
-                    pass
-            return s
-
-        def amount_as_integer(value):
-            """Convert an amount to whole rupees, ignoring decimal places."""
-            if value is None:
-                return None
-            if isinstance(value, (int, float)):
-                try:
-                    return int(round(value))
-                except Exception:
-                    return None
-            try:
-                from decimal import Decimal, InvalidOperation
-                raw = str(value).replace("\u00a0", " ").strip()
-                # PDF text may contain spaces inside a formatted number, e.g. "9 060" or "9, 060"
-                raw = re.sub(r"(?<=\d)\s+(?=[\d,])", "", raw)
-                # Handle accounting negative in parentheses e.g. "(9,060.00)" or trailing minus "9,060-"
-                if raw.startswith("(") and raw.endswith(")"):
-                    raw = "-" + raw[1:-1]
-                elif raw.endswith("-"):
-                    raw = "-" + raw[:-1]
-                match = re.search(r"[-+]?\d[\d,]*(?:\.\d+)?", raw)
-                if not match:
-                    return None
-                return int(round(float(Decimal(match.group(0).replace(",", "")))))
-            except (InvalidOperation, ValueError, TypeError):
-                return None
-
-        def amount_matches(value, amount, tolerance=AMOUNT_DIFFERENCE_TOLERANCE, allow_abs=True):
-            """Return True when whole-rupee amounts differ by at most tolerance."""
-            v = amount_as_integer(value)
-            t = amount_as_integer(amount)
-            if v is None or t is None:
-                return False
-            if abs(v - t) <= tolerance:
-                return True
-            if allow_abs and abs(abs(v) - abs(t)) <= tolerance:
-                return True
-            return False
-
-        def amount_rects(page, amount):
-            target = amount_as_integer(amount)
-            if target is None:
-                return []
-            rects = []
-            for word in page.get_text("words"):
-                if amount_matches(word[4], target):
-                    rects.append(fitz.Rect(word[:4]))
-            if rects:
-                return rects
-
-            # Fallback: search for exact text patterns via PyMuPDF search engine
-            abs_t = abs(target)
-            formatted = f"{abs_t:,}"
-            plain = str(abs_t)
-            candidates = [
-                f"{formatted}.00", formatted,
-                f"{plain}.00", plain,
-                f"-{formatted}.00", f"-{formatted}",
-                f"({formatted}.00)", f"({formatted})",
-            ]
-            for c in candidates:
-                found = page.search_for(c)
-                if found:
-                    return found
-            return []
-
-        def text_has_amount(text, amount):
-            target = amount_as_integer(amount)
-            if target is None:
-                return False
-            abs_t = abs(target)
-            formatted = f"{abs_t:,}"
-            plain = str(abs_t)
-            candidates = [
-                f"{formatted}.00", formatted,
-                f"{plain}.00", plain,
-                f"-{formatted}.00", f"-{formatted}",
-                f"({formatted}.00)", f"({formatted})",
-            ]
-            if any(c.lower() in text.lower() for c in candidates):
-                return True
-
-            clean = re.sub(r"(?<=\d)[ \t]+(?=\d{3}\b)", "", text.replace("\u00a0", " "))
-            clean = re.sub(r"(?<=,)[ \t]+(?=\d)", "", clean)
-            tokens = re.findall(r"[-+]?\(?\d[\d,]*(?:\.\d+)?\)?", clean)
-            return any(amount_matches(token, target) for token in tokens)
-
-        def debit_amount_in_month_row(page, month, amount):
-            """Find the closest debit amount on the row containing the month."""
-            target = amount_as_integer(amount)
-            if target is None:
-                return []
-
-            month_rects = page.search_for(format_month(month))
-            if not month_rects:
-                return []
-            month_rect = month_rects[0]
-            month_y = (month_rect.y0 + month_rect.y1) / 2
-
-            candidates = []
-            for word in page.get_text("words"):
-                word_rect = fitz.Rect(word[:4])
-                word_y = (word_rect.y0 + word_rect.y1) / 2
-                if word_rect.intersects(month_rect):
-                    continue
-                if abs(word_y - month_y) > max(10, month_rect.height * 2.0):
-                    continue
-                value = amount_as_integer(word[4])
-                if value is None:
-                    continue
-                diff = min(abs(value - target), abs(abs(value) - abs(target)))
-                candidates.append((diff, word_rect))
-
-            if not candidates:
-                return []
-
-            candidates.sort(key=lambda item: item[0])
-            return [candidates[0][1]] if candidates[0][0] <= AMOUNT_DIFFERENCE_TOLERANCE else []
-
-        def filter_pdf(pdf_path, month=None, amount=None, page_from=None, page_to=None):
-            """Filter by an explicit page range or by month/amount."""
-            temp_filtered = pdf_path.replace(".pdf", "_filtered.pdf")
-
-            if page_from is not None and page_to is not None:
-                page_doc = fitz.open(pdf_path)
-                total = len(page_doc)
-                if page_from < 1 or page_to < page_from or page_to > total:
-                    page_doc.close()
-                    raise Exception(
-                        f"Page range {page_from}-{page_to} is outside the downloaded PDF (1-{total})"
-                    )
-                page_doc.select(list(range(page_from - 1, page_to)))
-                page_doc.save(temp_filtered, garbage=4, deflate=True, clean=True)
-                page_doc.close()
-                os.replace(temp_filtered, pdf_path)
-                self.log.emit(f"PDF filtered to pages {page_from}-{page_to}")
-                return
-
-            reader = PdfReader(pdf_path)
-            fitz_doc = fitz.open(pdf_path)
-            writer = PdfWriter()
-            month_str = format_month(month).lower() if month else None
-            has_month = bool(month_str)
-            has_amount = amount_as_integer(amount) is not None
-            matching_pages = []
-            for page_number in range(len(fitz_doc)):
-                page = fitz_doc[page_number]
-                text = page.get_text("text").lower()
-                m = has_month and month_str in text
-                a = has_amount and (text_has_amount(text, amount) or bool(amount_rects(page, amount)))
-                matches = (m and a) if (has_month and has_amount) else (m or a)
-                if matches:
-                    matching_pages.append(page_number)
-            fitz_doc.close()
-            if self.match_mode == "second":
-                selected_pages = matching_pages[1:2]
-            elif self.match_mode == "all":
-                selected_pages = matching_pages
-            else:
-                selected_pages = matching_pages[:1]
-
-            if not selected_pages:
-                if self.match_mode == "second" and matching_pages:
-                    raise Exception("Only one matching page found; second match does not exist")
-                raise Exception("No matching page found (month/amount)")
-
-            for page_number in selected_pages:
-                writer.add_page(reader.pages[page_number])
-            with open(temp_filtered, "wb") as f:
-                writer.write(f)
-            self.log.emit(
-                f"Selected {self.match_mode} matching page(s): "
-                f"{len(selected_pages)} of {len(matching_pages)} found"
-            )
-            # highlight
-            doc = fitz.open(temp_filtered)
-            for page in doc:
-                if has_month:
-                    month_rects = page.search_for(format_month(month))
-                    for rect in month_rects:
-                        page.add_highlight_annot(rect).update()
-                if has_amount:
-                    areas = []
-                    if has_month:
-                        areas = debit_amount_in_month_row(page, month, amount)
-                    if not areas:
-                        areas = amount_rects(page, amount)
-                    for rect in areas:
-                        page.add_highlight_annot(rect).update()
-            highlighted = pdf_path.replace(".pdf", "_highlighted.pdf")
-            doc.save(highlighted, garbage=4, deflate=True, clean=True)
-            doc.close()
-            os.remove(pdf_path)
-            os.remove(temp_filtered)
-            shutil.move(highlighted, pdf_path)
-            self.log.emit("PDF filtered and highlighted")
-
-        def stamp_sr(pdf_path, sr):
-            doc = fitz.open(pdf_path)
-            total = len(doc)
-            for i, page in enumerate(doc, 1):
-                # page.rect is rotation-aware, so the stamp stays at the
-                # same visual corner on portrait and landscape pages.
-                rect = page.rect
-                label = f"Sr No. {sr} ({i}/{total})"
-                label_width = fitz.get_text_length(label, fontname="hebo", fontsize=14)
-                page.insert_text(
-                    (rect.width - label_width - 20, 24),
-                    label,
-                    fontsize=14,
-                    fontname="hebo",
-                    color=(0, 0, 0),
-                )
-            stamped = pdf_path.replace(".pdf", "_stamped.pdf")
-            doc.save(stamped, garbage=4, deflate=True, clean=True)
-            doc.close()
-            os.replace(stamped, pdf_path)
 
         try:
             chromedriver_bin = ChromeDriverManager().install()
@@ -962,23 +1151,56 @@ class PITCWorker(QThread):
                     base_name  = sr if sr else ac
                     final_name = get_unique_name(base_name)
                     final_path = os.path.join(dl, final_name)
-                    os.rename(new_pdf, final_path)
 
-                    if self.page_from is not None and self.page_to is not None:
-                        filter_pdf(final_path, page_from=self.page_from, page_to=self.page_to)
-                    elif month or amount_as_integer(amount) is not None:
-                        filter_pdf(final_path, month, amount)
+                    try:
+                        has_page_range = (self.page_from is not None and self.page_to is not None)
+                        has_filter = (bool(month) or amount_as_integer(amount) is not None)
 
-                    if sr:
-                        stamp_sr(final_path, sr)
+                        if has_page_range:
+                            filter_pdf_by_range(new_pdf, final_path, self.page_from, self.page_to, log_emit=self.log.emit, remove_input=True)
+                        elif has_filter:
+                            filter_pdf(
+                                new_pdf, final_path,
+                                month=month, amount=amount,
+                                match_mode=self.match_mode,
+                                report_key=self.report_key,
+                                log_emit=self.log.emit,
+                                remove_input=True
+                            )
+                        else:
+                            os.rename(new_pdf, final_path)
 
-                    status.value = "Done"
-                    self.log.emit(f"✅ PDF created: {final_name}")
+                        if sr:
+                            stamp_sr(final_path, sr)
+
+                        status.value = "Done"
+                        self.log.emit(f"✅ PDF created: {final_name}")
+                        wb.save(self.excel)
+
+                    except (AmountNotFoundError, MonthNotFoundError, NoMatchError) as e:
+                        for p in (final_path, new_pdf):
+                            if p and os.path.exists(p):
+                                try: os.remove(p)
+                                except Exception: pass
+                        status.value = str(e)
+                        self.log.emit(f"→ {e}; PDF not created")
+                        wb.save(self.excel)
+
+                    except Exception as e:
+                        traceback.print_exc()
+                        for p in (final_path, new_pdf):
+                            if p and os.path.exists(p):
+                                try: os.remove(p)
+                                except Exception: pass
+                        status.value = "Error"
+                        self.log.emit(f"⚠ ERROR: {e}")
+                        wb.save(self.excel)
 
             except Exception as e:
                 traceback.print_exc()
                 status.value = "Error"
                 self.log.emit(f"⚠ ERROR: {e}")
+                wb.save(self.excel)
                 return_to_search_page(driver, wait)
                 time.sleep(1)
 
