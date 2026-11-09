@@ -28,6 +28,16 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.109": [
+        "<b>PITC Downloader PDF Column Highlighting:</b> In Billing Details, restricted amount matching strictly to NORMAL, DETECTED, and AUDIT columns; in Billing Adjustment Details, restricted strictly to TOTAL column; eliminated false highlighting in OPENING BALANCE, TOTAL PAYABLE CONSUMMER, and Total Receivable.",
+        "<b>Amount Not Found Multi-Page Handling:</b> When an amount or month is not matched, no orphan multi-page raw PDF is generated or saved; downloaded files are purged immediately and status is cleanly recorded in Excel.",
+    ],
+    "v2.8.108": [
+        "<b>PITC Downloader Search Flow:</b> Optimized report searching flow and single refresh mechanism for increased reliability.",
+    ],
+    "v2.8.107": [
+        "<b>PITC Downloader Tab & Amount Matching:</b> Enhanced tab closing routine and amount matching accuracy.",
+    ],
     "v2.8.106": [
         "<b>UI Changes & Default Styling:</b> Set Vesper theme, Electric Blue accent, Inter typography, Standard UI scale (8.5pt), and Compact density as application defaults.",
         "<b>Added Customization Tab under Settings:</b> Added dedicated Personalization and Customization tab in Settings for real-time live preview and configuration of themes, accent palettes, font scaling, density, activity bar mode, and window launch behavior.",

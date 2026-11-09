@@ -1,3 +1,2 @@
-• **E/Bills Downloader Crash Fix:** Resolved crash when processing bills caused by PyMuPDF 2.0 ONNX layout model lookup (missing layout_rf2.4.1+imf1.yaml resource).
-• **Dependency & Build Stabilization:** Pinned PyMuPDF to <2.0.0 and actively excluded unused ONNX layout models from PyInstaller builds to keep binary lightweight and fast.
-• **Resilient PDF Formatting:** Isolated A4 scaling and Sr. No. stamping to prevent individual PDF formatting issues from halting multi-account batch downloads.
+• **PITC Downloader PDF Column Highlighting:** In Billing Details, restricted amount matching strictly to NORMAL, DETECTED, and AUDIT columns; in Billing Adjustment Details, restricted strictly to TOTAL column; eliminated false highlighting in OPENING BALANCE, TOTAL PAYABLE CONSUMMER, and Total Receivable.
+• **Amount Not Found Multi-Page Handling:** When an amount or month is not matched, no orphan multi-page raw PDF is generated or saved; downloaded files are purged immediately and status is cleanly recorded in Excel.
