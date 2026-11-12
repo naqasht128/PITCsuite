@@ -507,11 +507,8 @@ class LicenseGateDialog(QDialog):
         header_row.addWidget(badge)
         main_layout.addLayout(header_row)
 
-        # Tab Widget
-        tabs = QTabWidget(self)
-        tabs.addTab(self._build_activation_tab(initial_error), "🔑 Product Activation")
-        tabs.addTab(self._build_plans_tab(), "💎 Subscription Plans")
-        main_layout.addWidget(tabs, 1)
+        # Activation Widget
+        main_layout.addWidget(self._build_activation_tab(initial_error), 1)
 
     def _build_activation_tab(self, initial_error: str) -> QWidget:
         p = self._palette_data
@@ -630,113 +627,50 @@ class LicenseGateDialog(QDialog):
         self.btn_activate.clicked.connect(self._on_activate_clicked)
         layout.addWidget(self.btn_activate)
 
-        return widget
+        # External links row (Website & WhatsApp)
+        help_row = QHBoxLayout()
+        help_row.setSpacing(8)
 
-    def _build_plans_tab(self) -> QWidget:
-        p = self._palette_data
-        acc = self._accent
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(10)
-
-        info_lbl = QLabel("Choose a subscription plan to activate or renew PITC Suite:")
-        info_lbl.setStyleSheet(f"font-size: 9pt; color: {p['text_sec']};")
-        layout.addWidget(info_lbl)
-
-        # Plans Grid
-        grid = QGridLayout()
-        grid.setSpacing(8)
-
-        plans_data = [
-            ("1 Month Plan", "Rs. 600", "30 Days Validity", "1 Device Limit"),
-            ("3 Months Plan", "Rs. 1,400", "90 Days Validity", "Up to 2 Devices"),
-            ("6 Months Plan", "Rs. 2,400", "180 Days Validity", "Up to 2 Devices"),
-            ("1 Year Plan", "Rs. 4,000", "365 Days Validity", "Up to 3 Devices"),
-        ]
-
-        for i, (title, price, dur, dev) in enumerate(plans_data):
-            row = i // 2
-            col = i % 2
-            card = QFrame()
-            card.setStyleSheet(f"""
-                QFrame {{
-                    background: {p['card_bg']};
-                    border: 1px solid {p['card_border']};
-                    border-radius: 6px;
-                    padding: 6px;
-                }}
-            """)
-            c_layout = QVBoxLayout(card)
-            c_layout.setContentsMargins(10, 8, 10, 8)
-            c_layout.setSpacing(2)
-
-            t_lbl = QLabel(title)
-            t_lbl.setStyleSheet(f"font-weight: bold; color: {p['text_main']}; font-size: 9.5pt;")
-            c_layout.addWidget(t_lbl)
-
-            p_lbl = QLabel(price)
-            p_lbl.setStyleSheet("font-weight: bold; color: #10b981; font-size: 12pt;")
-            c_layout.addWidget(p_lbl)
-
-            d_lbl = QLabel(f"• {dur}\n• {dev}")
-            d_lbl.setStyleSheet(f"color: {p['text_muted']}; font-size: 8pt;")
-            c_layout.addWidget(d_lbl)
-
-            grid.addWidget(card, row, col)
-
-        layout.addLayout(grid)
-        layout.addSpacing(4)
-
-        # Quick Order Action Buttons
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(10)
-
-        btn_wa = QPushButton("Order via WhatsApp")
-        btn_wa.setCursor(Qt.PointingHandCursor)
-        btn_wa.setStyleSheet("""
-            QPushButton {
-                background: #10b981;
-                color: white;
-                font-weight: bold;
-                font-size: 9pt;
-                padding: 9px;
-                border: none;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background: #059669;
-            }
-            QPushButton:pressed {
-                background: #047857;
-            }
-        """)
-        btn_wa.clicked.connect(self._open_whatsapp)
-        btn_row.addWidget(btn_wa)
-
-        btn_email = QPushButton("Contact via Email")
-        btn_email.setCursor(Qt.PointingHandCursor)
-        btn_email.setStyleSheet(f"""
+        btn_web = QPushButton("🌐 View Plans on Website")
+        btn_web.setCursor(Qt.PointingHandCursor)
+        btn_web.setStyleSheet(f"""
             QPushButton {{
-                background: {acc['hex']};
-                color: white;
-                font-weight: bold;
-                font-size: 9pt;
-                padding: 9px;
-                border: none;
-                border-radius: 5px;
+                background: {p['input_bg']};
+                color: {acc['hex']};
+                font-weight: 600;
+                font-size: 8.5pt;
+                padding: 7px 12px;
+                border: 1px solid {p['border']};
+                border-radius: 4px;
             }}
             QPushButton:hover {{
-                background: {acc['hover']};
-            }}
-            QPushButton:pressed {{
-                background: {acc['pressed']};
+                background: {p['card_border']};
             }}
         """)
-        btn_email.clicked.connect(self._open_email)
-        btn_row.addWidget(btn_email)
+        btn_web.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://pit-csuite.vercel.app/details.html?tool=pitc-suite")))
+        help_row.addWidget(btn_web)
 
-        layout.addLayout(btn_row)
+        btn_wa = QPushButton("💬 WhatsApp Support")
+        btn_wa.setCursor(Qt.PointingHandCursor)
+        btn_wa.setStyleSheet(f"""
+            QPushButton {{
+                background: {p['input_bg']};
+                color: #10b981;
+                font-weight: 600;
+                font-size: 8.5pt;
+                padding: 7px 12px;
+                border: 1px solid {p['border']};
+                border-radius: 4px;
+            }}
+            QPushButton:hover {{
+                background: {p['card_border']};
+            }}
+        """)
+        btn_wa.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(f"https://wa.me/923339962474?text=Hello,%20I%20would%20like%20to%20get%20a%20PITCSuite%20license.%20My%20HWID%20is:%20{self.device_id}")))
+        help_row.addWidget(btn_wa)
+
+        layout.addSpacing(6)
+        layout.addLayout(help_row)
 
         return widget
 
