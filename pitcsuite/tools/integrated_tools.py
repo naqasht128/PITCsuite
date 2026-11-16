@@ -168,12 +168,18 @@ class BillScraperPanel(QWidget):
 
         # Row 2: Delay
         form.addWidget(QLabel("Delay (seconds):"), 2, 0)
+        delay_layout = QHBoxLayout()
         self.delay = QDoubleSpinBox()
         self.delay.setRange(0.1, 30)
-        self.delay.setSingleStep(0.1)
-        self.delay.setValue(2.0)
+        self.delay.setSingleStep(0.5)
+        self.delay.setValue(3.0)
         self.delay.setFixedWidth(80)
-        form.addWidget(self.delay, 2, 1, 1, 2, Qt.AlignLeft)
+        delay_layout.addWidget(self.delay)
+        lbl_hint = QLabel("(Default 3.0s prevents PITC blocking & CAPTCHA rate-limits)")
+        lbl_hint.setStyleSheet("color: #64748b; font-style: italic; font-size: 11px;")
+        delay_layout.addWidget(lbl_hint)
+        delay_layout.addStretch()
+        form.addLayout(delay_layout, 2, 1, 1, 2)
 
         # Rows 3 & 4: History checkboxes
         self.chk_history_1yr = QCheckBox("Billing/Payment History (1 year)")

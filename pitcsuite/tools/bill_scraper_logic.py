@@ -1627,7 +1627,7 @@ class BillScraperApp(tk.Tk):
         self.stop_event = threading.Event()
         self.input_var = tk.StringVar()
         self.url_var = tk.StringVar(value=self._load_url())
-        self.delay_var = tk.DoubleVar(value=2.0)
+        self.delay_var = tk.DoubleVar(value=3.0)
         self.history_1yr_var = tk.BooleanVar(value=False)
         self.history_6mo_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="Ready. Choose a workbook (.xlsx/.ods) containing AC numbers in Column A.")
@@ -1734,7 +1734,7 @@ class BillScraperApp(tk.Tk):
         ttk.Label(settings_box, text="Delay (seconds):", font=("Segoe UI", 9)).grid(row=0, column=0, sticky="w", pady=2)
         spin = ttk.Spinbox(settings_box, from_=0.5, to=30.0, increment=0.5, textvariable=self.delay_var, width=6)
         spin.grid(row=0, column=1, sticky="w", padx=(6, 4), pady=2)
-        ttk.Label(settings_box, text="(Default 2.0s prevents PITC blocking)", font=("Segoe UI", 8, "italic"), foreground="#64748b").grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 4))
+        ttk.Label(settings_box, text="(Default 3.0s prevents PITC blocking & CAPTCHA rate-limits)", font=("Segoe UI", 8, "italic"), foreground="#64748b").grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 4))
 
         self.chk_history_1yr = ttk.Checkbutton(
             settings_box,
