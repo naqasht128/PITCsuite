@@ -1145,7 +1145,7 @@ class PITCBillScraper:
             if not ocr:
                 raise RuntimeError("CAPTCHA detected on PITC bill portal, but ddddocr is not installed.")
 
-            max_captcha_attempts = 3
+            max_captcha_attempts = 5
             for attempt in range(max_captcha_attempts):
                 if stop_event and stop_event.is_set():
                     raise InterruptedError("Operation stopped by user")
@@ -1359,6 +1359,8 @@ class PITCBillScraper:
         except InterruptedError:
             raise
         except Exception as exc:
+            if log_callback:
+                log_callback(f"[{account}] {exc}")
             return {
                 "_account": account,
                 "BNo": bno,
