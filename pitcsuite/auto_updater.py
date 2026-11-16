@@ -256,7 +256,7 @@ def get_gdrive_url_and_token(file_id: str) -> str:
     return final_url
 
 
-class DownloadThread(QThread):
+class DownloadThread(QObject):
     progress = Signal(int, int)
     finished = Signal(str)
     error = Signal(str)
@@ -267,9 +267,24 @@ class DownloadThread(QThread):
         self.dest = dest
         self.expected_size = expected_size
         self._is_cancelled = False
+        self._thread: Optional[threading.Thread] = None
 
     def cancel(self):
         self._is_cancelled = True
+
+    def terminate(self):
+        self._is_cancelled = True
+
+    def start(self):
+        self._thread = threading.Thread(target=self.run, daemon=True)
+        self._thread.start()
+
+    def isRunning(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def wait(self, timeout=None):
+        if self._thread is not None:
+            self._thread.join(timeout / 1000.0 if timeout else None)
 
     def run(self):
         try:
@@ -414,16 +429,44 @@ class DownloadThread(QThread):
             self.error.emit(str(e))
 
 
-class UpdateChecker(QThread):
+class UpdateChecker(QObject):
     result = Signal(bool, str, list, str, int)  # update_available, version_string, release_notes, download_url, file_size
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._stopped = False
+        self._thread: Optional[threading.Thread] = None
+
+    def stop(self):
+        self._stopped = True
+
+    def start(self):
+        self._thread = threading.Thread(target=self._run_wrapper, daemon=True)
+        self._thread.start()
+
+    def isRunning(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def wait(self, timeout=None):
+        if self._thread is not None:
+            self._thread.join(timeout / 1000.0 if timeout else None)
+
+    def _run_wrapper(self):
+        if self._stopped:
+            return
+        self.run()
 
     def run(self):
         # 1. Primary: Check secure Vercel License/Update API
         try:
+            if self._stopped:
+                return
             from pitcsuite.license_manager import get_api_base_url
             api_url = get_api_base_url()
             latest_url = f"{api_url}/api/updates/latest"
             resp = requests.get(latest_url, timeout=7)
+            if self._stopped:
+                return
             if resp.status_code == 200:
                 data = resp.json()
                 raw_ver = str(data.get("version", "")).strip()
@@ -455,6 +498,8 @@ class UpdateChecker(QThread):
 
                     v_latest = version.parse(clean_tag.lstrip('vV'))
                     v_current = version.parse(get_current_version().lstrip('vV'))
+                    if self._stopped:
+                        return
                     if v_latest > v_current:
                         self.result.emit(True, clean_tag, notes_list, download_url, file_size)
                         return
@@ -464,11 +509,16 @@ class UpdateChecker(QThread):
         except Exception:
             pass
 
+        if self._stopped:
+            return
+
         # 2. Secondary Fallback: Check Google Drive version file
         try:
             version_url = get_gdrive_url_and_token(GDRIVE_VERSION_FILE_ID)
             v_response = requests.get(version_url, timeout=8)
             v_response.raise_for_status()
+            if self._stopped:
+                return
             raw_text = v_response.text.strip()
             
             latest_tag, remote_notes = parse_version_response(raw_text)
@@ -481,6 +531,8 @@ class UpdateChecker(QThread):
                     if not re.search(r'(?:full\s*changelog|github\.com/.+/compare|compare/v\d|\/compare\/)', n, re.I)
                 ] if remote_notes else []
                 notes = clean_remote if clean_remote else get_release_notes(latest_tag)
+                if self._stopped:
+                    return
                 if v_latest > v_current:
                     self.result.emit(True, latest_tag, notes, GDRIVE_SETUP_FILE_ID, 0)
                     return
@@ -492,9 +544,12 @@ class UpdateChecker(QThread):
                 if not re.search(r'(?:full\s*changelog|github\.com/.+/compare|compare/v\d|\/compare\/)', n, re.I)
             ] if remote_notes else []
             notes = clean_remote if clean_remote else get_release_notes(latest_tag or get_current_version())
+            if self._stopped:
+                return
             self.result.emit(False, latest_tag, notes, "", 0)
         except Exception:
-            self.result.emit(False, "", [], "", 0)
+            if not self._stopped:
+                self.result.emit(False, "", [], "", 0)
 
 
 class UpdateAvailableDialog(QDialog):
@@ -829,6 +884,14 @@ def check_for_updates(parent_window, silent=False):
     parent_window._update_checker = checker  # Prevent GC
     
     def on_result(has_update, latest_tag, notes, download_url="", file_size=0):
+        if getattr(checker, "_stopped", False):
+            return
+        if parent_window is not None:
+            try:
+                if not parent_window.isVisible() and silent:
+                    return
+            except Exception:
+                return
         if has_update:
             if silent:
                 if hasattr(parent_window, 'notify_update_available'):

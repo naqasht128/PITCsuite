@@ -1,6 +1,9 @@
 import os
 import re
-import fitz
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter

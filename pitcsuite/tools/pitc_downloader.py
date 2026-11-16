@@ -477,8 +477,93 @@ def kill_profile_chrome(profile_dir):
         pass
 
 
+def reset_profile_crash_state(profile_dir):
+    """Ensure Chrome's Preferences and Local State record a normal exit so the
+    'Restore pages? Chrome didn't shut down correctly' bubble never appears.
+    """
+    if not profile_dir or not os.path.isdir(profile_dir):
+        return
+    import json
+
+    pref_candidates = [
+        os.path.join(profile_dir, "Default", "Preferences"),
+        os.path.join(profile_dir, "Preferences"),
+    ]
+    for pref_path in pref_candidates:
+        if not os.path.isfile(pref_path):
+            continue
+        try:
+            with open(pref_path, "r", encoding="utf-8", errors="ignore") as f:
+                data = json.load(f)
+            modified = False
+
+            # Check profile dict
+            prof = data.get("profile")
+            if isinstance(prof, dict):
+                if prof.get("exit_type") != "Normal":
+                    prof["exit_type"] = "Normal"
+                    modified = True
+                if prof.get("exited_cleanly") is not True:
+                    prof["exited_cleanly"] = True
+                    modified = True
+
+            # Check top-level exit_type / exited_cleanly
+            if data.get("exit_type") != "Normal":
+                data["exit_type"] = "Normal"
+                modified = True
+            if data.get("exited_cleanly") is not True:
+                data["exited_cleanly"] = True
+                modified = True
+
+            # Clean sessions event log
+            sessions = data.get("sessions")
+            if isinstance(sessions, dict):
+                ev_log = sessions.get("event_log")
+                if isinstance(ev_log, list):
+                    for item in ev_log:
+                        if isinstance(item, dict) and item.get("crashed"):
+                            item["crashed"] = False
+                            modified = True
+
+            if modified:
+                with open(pref_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f)
+        except Exception:
+            pass
+
+    # Also clean Local State
+    ls_path = os.path.join(profile_dir, "Local State")
+    if os.path.isfile(ls_path):
+        try:
+            with open(ls_path, "r", encoding="utf-8", errors="ignore") as f:
+                ls_data = json.load(f)
+            ls_modified = False
+
+            stability = (
+                ls_data.get("user_experience_metrics", {}).get("stability")
+                or ls_data.get("stability")
+            )
+            if isinstance(stability, dict):
+                if stability.get("exited_cleanly") is not True:
+                    stability["exited_cleanly"] = True
+                    ls_modified = True
+                if stability.get("crash_count", 0) != 0:
+                    stability["crash_count"] = 0
+                    ls_modified = True
+
+            if ls_data.get("variations_crash_streak", 0) != 0:
+                ls_data["variations_crash_streak"] = 0
+                ls_modified = True
+
+            if ls_modified:
+                with open(ls_path, "w", encoding="utf-8") as f:
+                    json.dump(ls_data, f)
+        except Exception:
+            pass
+
+
 def cleanup_profile_locks(profile_dir):
-    """Remove stale Chrome singleton locks from profile_dir to allow clean reopen."""
+    """Remove stale Chrome singleton locks from profile_dir to allow clean reopen and reset crash state."""
     if not profile_dir or not os.path.isdir(profile_dir):
         return
     lock_names = {"SingletonLock", "SingletonCookie", "SingletonSocket", "DevToolsActivePort", "lockfile"}
@@ -491,6 +576,7 @@ def cleanup_profile_locks(profile_dir):
                     pass
     except Exception:
         pass
+    reset_profile_crash_state(profile_dir)
 
 
 class PITCWorker(QThread):
@@ -534,6 +620,14 @@ class PITCWorker(QThread):
     def _close_driver(driver):
         if not driver:
             return
+        # 1. Attempt graceful quit so Chrome flushes clean session state
+        try:
+            driver.quit()
+            return
+        except Exception:
+            pass
+
+        # 2. Fallback to killing chromedriver process tree if graceful quit fails
         try:
             if hasattr(driver, "service") and driver.service and getattr(driver.service, "process", None):
                 pid = driver.service.process.pid
@@ -541,7 +635,6 @@ class PITCWorker(QThread):
                     subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, timeout=5)
                 except Exception:
                     pass
-            driver.quit()
         except Exception:
             pass
 
@@ -586,7 +679,11 @@ class PITCWorker(QThread):
             from pypdf import PdfReader, PdfWriter
             import sys as _sys
             _sys.modules.setdefault("pymupdf.layout", None)
-            import pyautogui, fitz, shutil, traceback
+            import pyautogui, shutil, traceback
+            try:
+                import pymupdf as fitz
+            except ImportError:
+                import fitz
             import datetime as _dt
             import pyotp
             import urllib.request
@@ -720,8 +817,16 @@ class PITCWorker(QThread):
             options.add_argument("--no-first-run")
             options.add_argument("--no-default-browser-check")
             options.add_argument("--disable-session-crashed-bubble")
+            options.add_argument("--hide-crash-restore-bubble")
+            options.add_argument("--disable-infobars")
+            options.add_argument("--noerrdialogs")
             options.add_argument(f"--user-data-dir={self.profile_dir}")
             options.add_experimental_option("prefs", {
+                "profile.exit_type": "Normal",
+                "profile.exited_cleanly": True,
+                "exit_type": "Normal",
+                "exited_cleanly": True,
+                "session.restore_on_startup": 4,
                 "download.default_directory": dl,
                 "download.prompt_for_download": False,
                 "download.directory_upgrade": True,

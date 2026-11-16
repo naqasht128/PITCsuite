@@ -2,10 +2,12 @@
 
 import os
 import sys
+import warnings
 
-# Suppress PyMuPDF layout recommendation and prevent missing ONNX model crashes
+# Suppress PyMuPDF layout recommendation and fitz deprecation warning
 os.environ.setdefault("PYMUPDF_SUGGEST_LAYOUT_ANALYZER", "0")
 sys.modules.setdefault("pymupdf.layout", None)
+warnings.filterwarnings("ignore", message=r".*The `fitz` API is deprecated.*")
 
 if sys.stdout is None: sys.stdout = open(os.devnull, 'w')
 if sys.stderr is None: sys.stderr = open(os.devnull, 'w')

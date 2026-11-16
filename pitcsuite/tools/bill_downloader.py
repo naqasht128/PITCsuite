@@ -258,7 +258,10 @@ class BillSoftPanel(QWidget):
     def _fit_pdf_to_a4(self, pdf_path, sr=None):
         import sys
         sys.modules.setdefault("pymupdf.layout", None)
-        import fitz
+        try:
+            import pymupdf as fitz
+        except ImportError:
+            import fitz
 
         src = fitz.open(pdf_path)
         if not src.page_count:

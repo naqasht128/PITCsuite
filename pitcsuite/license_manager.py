@@ -20,7 +20,8 @@ import webbrowser
 import winreg
 
 import requests
-from PySide6.QtCore import Qt, QThread, Signal, QUrl
+import threading
+from PySide6.QtCore import Qt, QThread, Signal, QUrl, QObject
 from PySide6.QtGui import QFont, QCursor, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
@@ -366,7 +367,7 @@ def is_offline_grace_valid(local_lic: dict) -> Tuple[bool, str]:
 # BACKGROUND ACTIVATION WORKER THREAD
 # ====================================================================
 
-class ActivationWorker(QThread):
+class ActivationWorker(QObject):
     finished_signal = Signal(dict)
 
     def __init__(self, serial_key: str, device_id: str, candidate_ids: List[str]):
@@ -374,6 +375,18 @@ class ActivationWorker(QThread):
         self.serial_key = serial_key
         self.device_id = device_id
         self.candidate_ids = candidate_ids
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self):
+        self._thread = threading.Thread(target=self.run, daemon=True)
+        self._thread.start()
+
+    def isRunning(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def wait(self, timeout=None):
+        if self._thread is not None:
+            self._thread.join(timeout / 1000.0 if timeout else None)
 
     def run(self):
         # Call remote activation API (all licenses must be verified with Supabase)
