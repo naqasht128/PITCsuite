@@ -16,6 +16,7 @@ import sys
 import threading
 import time
 import tkinter as tk
+import urllib.parse
 import xml.etree.ElementTree as etree
 import zipfile
 from decimal import Decimal
@@ -704,7 +705,20 @@ def load_spreadsheet(path):
 
 
 class PITCBillScraper:
-    def __init__(self, delay=2.0, timeout=90, history_mode=None, url=None):
+    _ocr = None
+
+    @classmethod
+    def get_ocr(cls):
+        if cls._ocr is None:
+            try:
+                import ddddocr
+                cls._ocr = ddddocr.DdddOcr(show_ad=False)
+            except Exception as exc:
+                print(f"Warning: Failed to initialize ddddocr: {exc}")
+                cls._ocr = False
+        return cls._ocr if cls._ocr else None
+
+    def __init__(self, delay=3.0, timeout=90, history_mode=None, url=None):
         self.delay = delay
         self.timeout = timeout
         self.history_mode = history_mode
@@ -1121,9 +1135,60 @@ class PITCBillScraper:
             raise RuntimeError("PITC search form was not found")
         payload = {i["name"]: i.get("value", "") for i in form.select("input[type=hidden][name]")}
         payload.update({"rbSearchByList": "refno", "searchTextBox": account, "ruCodeTextBox": "", "btnSearch": "Search"})
-        result = self._fetch_url_with_retry(session, "post", target_url, data=payload, stop_event=stop_event, log_callback=log_callback)
-        if "CONSUMER DETAIL" not in result.text.upper() and "CONSUMER DETAILS" not in result.text.upper():
-            raise RuntimeError(clean(BeautifulSoup(result.text, parser).get_text(" "))[:300] or "No bill returned")
+
+        captcha_img = form.find("img", id="captchaImage") or form.find("img", src=lambda s: s and "Captcha" in s)
+        has_captcha_input = form.find("input", attrs={"name": "captchaInput"}) or form.find("input", id=lambda s: s and "captcha" in str(s).lower())
+
+        result = None
+        if captcha_img and has_captcha_input:
+            ocr = self.get_ocr()
+            if not ocr:
+                raise RuntimeError("CAPTCHA detected on PITC bill portal, but ddddocr is not installed.")
+
+            max_captcha_attempts = 3
+            for attempt in range(max_captcha_attempts):
+                if stop_event and stop_event.is_set():
+                    raise InterruptedError("Operation stopped by user")
+
+                img_src = captcha_img.get("src", "")
+                img_url = urllib.parse.urljoin(target_url, img_src)
+                img_resp = self._fetch_url_with_retry(session, "get", img_url, stop_event=stop_event, log_callback=log_callback)
+
+                captcha_code = ocr.classification(img_resp.content).strip()
+                if log_callback:
+                    log_callback(f"[{account}] Solved CAPTCHA: {captcha_code}")
+
+                captcha_field = has_captcha_input.get("name", "captchaInput")
+                payload[captcha_field] = captcha_code
+
+                # Brief pause so server-side ASP.NET session state synchronizes cleanly
+                time.sleep(0.3)
+
+                result = self._fetch_url_with_retry(session, "post", target_url, data=payload, stop_event=stop_event, log_callback=log_callback)
+
+                if "CONSUMER DETAIL" in result.text.upper() or "CONSUMER DETAILS" in result.text.upper():
+                    break
+
+                res_soup = BeautifulSoup(result.text, parser)
+                err_text = res_soup.get_text(" ").upper()
+                if "INVALID CAPTCHA" in err_text or "CAPTCHA CODE" in err_text:
+                    if log_callback:
+                        log_callback(f"[{account}] CAPTCHA verification failed on attempt {attempt + 1}. Retrying...")
+                    new_form = res_soup.select_one("form#SubmitForm") or res_soup.find("form")
+                    if new_form:
+                        payload = {i["name"]: i.get("value", "") for i in new_form.select("input[type=hidden][name]")}
+                        payload.update({"rbSearchByList": "refno", "searchTextBox": account, "ruCodeTextBox": "", "btnSearch": "Search"})
+                        captcha_img = new_form.find("img", id="captchaImage") or new_form.find("img", src=lambda s: s and "Captcha" in s)
+                        has_captcha_input = new_form.find("input", attrs={"name": "captchaInput"}) or new_form.find("input", id=lambda s: s and "captcha" in str(s).lower())
+                    time.sleep(1.0)
+                    continue
+                break
+        else:
+            result = self._fetch_url_with_retry(session, "post", target_url, data=payload, stop_event=stop_event, log_callback=log_callback)
+
+        if not result or ("CONSUMER DETAIL" not in result.text.upper() and "CONSUMER DETAILS" not in result.text.upper()):
+            text_preview = clean(BeautifulSoup(result.text if result else "", parser).get_text(" "))[:300] if result else ""
+            raise RuntimeError(text_preview or "No bill returned")
         return BeautifulSoup(result.text, parser)
 
     def scrape_account(self, raw_account, existing_status=None, stop_event=None, log_callback=None, history_mode=None):

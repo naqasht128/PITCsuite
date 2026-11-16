@@ -14,3 +14,4 @@ pyotp>=2.9.0
 PyMuPDF>=1.23.0,<2.0.0
 pyinstaller>=6.0.0
 packaging>=23.0
+ddddocr>=1.6.1

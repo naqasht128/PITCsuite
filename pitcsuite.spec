@@ -1,10 +1,16 @@
 import os, glob
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
-hidden_imports = ['openpyxl', 'pypdf', 'fitz', 'pdfplumber', 'pyotp', 'PIL', 'pandas', 'pyautogui', 'requests', 'urllib3', 'reportlab']
+hidden_imports = ['openpyxl', 'pypdf', 'fitz', 'pdfplumber', 'pyotp', 'PIL', 'pandas', 'pyautogui', 'requests', 'urllib3', 'reportlab', 'ddddocr', 'onnxruntime']
 hidden_imports += collect_submodules('selenium')
 hidden_imports += collect_submodules('webdriver_manager')
 hidden_imports += collect_submodules('reportlab')
+
+ddddocr_datas = []
+try:
+    ddddocr_datas = collect_data_files('ddddocr')
+except Exception:
+    pass
 
 # Automatically bundle compiled C++ .pyd binaries from Nuitka if present
 compiled_binaries = []
@@ -16,7 +22,7 @@ a = Analysis(
     ['pitcsuite.py'],
     pathex=[],
     binaries=compiled_binaries,
-    datas=[('pitcsuite\\assets', 'pitcsuite\\assets')],
+    datas=[('pitcsuite\\assets', 'pitcsuite\\assets')] + ddddocr_datas,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
