@@ -1,2 +1,4 @@
-• **PITC Downloader PDF Column Highlighting:** In Billing Details, restricted amount matching strictly to NORMAL, DETECTED, and AUDIT columns; in Billing Adjustment Details, restricted strictly to TOTAL column; eliminated false highlighting in OPENING BALANCE, TOTAL PAYABLE CONSUMMER, and Total Receivable.
-• **Amount Not Found Multi-Page Handling:** When an amount or month is not matched, no orphan multi-page raw PDF is generated or saved; downloaded files are purged immediately and status is cleanly recorded in Excel.
+• **Automatic CAPTCHA Input:** Integrated automatic CAPTCHA recognition and input across portal bill scraping and downloader workflows.
+• **Chrome Session Stability:** Suppressed crash recovery and 'Restore pages' prompts when Chrome closes and restarts during batch runs.
+• **Modern PDF Engine:** Upgraded to modern PyMuPDF API across tools for clean, deprecation-free rendering and stamping.
+• **Thread Safety & Shutdown:** Resolved QThread background runner destruction on application exit for clean shutdowns.

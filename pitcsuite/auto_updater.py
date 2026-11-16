@@ -28,6 +28,15 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "v2.8.111": [
+        "<b>Automatic CAPTCHA Input:</b> Integrated automatic CAPTCHA recognition and input across portal bill scraping and downloader workflows.",
+        "<b>Chrome Session Stability:</b> Suppressed crash recovery and 'Restore pages' prompts when Chrome closes and restarts during batch runs.",
+        "<b>Modern PDF Engine:</b> Upgraded to modern PyMuPDF API across tools for clean, deprecation-free rendering and stamping.",
+        "<b>Thread Safety & Shutdown:</b> Resolved QThread background runner destruction on application exit for clean shutdowns.",
+    ],
+    "v2.8.110": [
+        "<b>Portal Search & Scraping Resiliency:</b> Enhanced robust search fallback and click routines.",
+    ],
     "v2.8.109": [
         "<b>PITC Downloader PDF Column Highlighting:</b> In Billing Details, restricted amount matching strictly to NORMAL, DETECTED, and AUDIT columns; in Billing Adjustment Details, restricted strictly to TOTAL column; eliminated false highlighting in OPENING BALANCE, TOTAL PAYABLE CONSUMMER, and Total Receivable.",
         "<b>Amount Not Found Multi-Page Handling:</b> When an amount or month is not matched, no orphan multi-page raw PDF is generated or saved; downloaded files are purged immediately and status is cleanly recorded in Excel.",
