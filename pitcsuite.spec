@@ -1,11 +1,12 @@
 import os, glob, importlib.util
 from PyInstaller.utils.hooks import collect_submodules
 
-hidden_imports = ['openpyxl', 'pypdf', 'fitz', 'pdfplumber', 'pyotp', 'PIL', 'pandas', 'pyautogui', 'requests', 'urllib3', 'reportlab', 'ddddocr', 'onnxruntime']
+hidden_imports = ['openpyxl', 'pypdf', 'fitz', 'pdfplumber', 'pyotp', 'PIL', 'pandas', 'pyautogui', 'requests', 'urllib3', 'reportlab', 'ddddocr', 'onnxruntime', 'cv2']
 hidden_imports += collect_submodules('selenium')
 hidden_imports += collect_submodules('webdriver_manager')
 hidden_imports += collect_submodules('reportlab')
 hidden_imports += collect_submodules('ddddocr')
+hidden_imports += collect_submodules('cv2')
 
 # Bundle only the lightweight 13MB default OCR model (common_old.onnx), omitting the 52MB beta model (common.onnx) and 19MB detection model (common_det.onnx)
 ddddocr_datas = []
@@ -35,7 +36,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=['rthook_cv2.py'],
-    excludes=['pymupdf.layout', 'pymupdf_layout', 'cv2', 'opencv'],
+    excludes=['pymupdf.layout', 'pymupdf_layout'],
     noarchive=False,
     optimize=0,
 )

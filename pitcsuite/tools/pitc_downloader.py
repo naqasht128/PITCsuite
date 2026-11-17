@@ -680,7 +680,7 @@ class PITCWorker(QThread):
             import sys as _sys
             _sys.modules.setdefault("pymupdf.layout", None)
             if "cv2" in _sys.modules and not hasattr(_sys.modules["cv2"], "__version__"):
-                _sys.modules["cv2"].__version__ = "2.0.0"
+                del _sys.modules["cv2"]
             import pyautogui, shutil, traceback
             try:
                 import pymupdf as fitz

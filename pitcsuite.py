@@ -19,16 +19,6 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-# Lightweight cv2 stub to prevent ddddocr 1.6.1 from importing 118MB OpenCV
-import types
-if "cv2" not in sys.modules:
-    _cv2_stub = types.ModuleType("cv2")
-    _cv2_stub.__version__ = "2.0.0"
-    _cv2_stub.__file__ = "cv2"
-    sys.modules["cv2"] = _cv2_stub
-elif not hasattr(sys.modules["cv2"], "__version__"):
-    sys.modules["cv2"].__version__ = "2.0.0"
-
 if sys.stdout is None: sys.stdout = open(os.devnull, 'w')
 if sys.stderr is None: sys.stderr = open(os.devnull, 'w')
 
