@@ -28,6 +28,26 @@ GDRIVE_SETUP_FILE_ID = "1wghUxDo3ezed5szbpXeWtWlyof4ykBIu"
 
 # Comprehensive 2-3 line release notes detailing recent amendments
 DEFAULT_RELEASE_NOTES: Dict[str, List[str]] = {
+    "2.8.114": [
+        "<b>Ultra-Fast Launch Performance:</b> Switched to native onedir architecture and asynchronous licensing checks, reducing startup time from 20+ seconds down to 1–2 seconds.",
+        "<b>Massive Size Reduction:</b> Excluded unneeded OpenCV binary dependencies and trimmed unnecessary models, cutting installer and executable size by over 130 MB.",
+        "<b>Direct Update Flow:</b> Clicking 'Update Available' now opens the update prompt and release notes directly, skipping intermediate dialogs.",
+        "<b>Batch Progress Logging:</b> Real-time progress sequence (e.g. 1/3: Processing <AC No>) now displays cleanly in Bill Scrapper and E-Bills Downloader logs.",
+        "<b>Automatic CAPTCHA Input:</b> Integrated automatic CAPTCHA recognition and input across portal bill scraping and downloader workflows.",
+        "<b>Chrome Session Stability:</b> Suppressed crash recovery and 'Restore pages' prompts when Chrome closes and restarts during batch runs.",
+        "<b>Modern PDF Engine:</b> Upgraded to modern PyMuPDF API across tools for clean, deprecation-free rendering and stamping.",
+        "<b>Thread Safety & Shutdown:</b> Resolved QThread background runner destruction on application exit for clean shutdowns.",
+    ],
+    "v2.8.114": [
+        "<b>Ultra-Fast Launch Performance:</b> Switched to native onedir architecture and asynchronous licensing checks, reducing startup time from 20+ seconds down to 1–2 seconds.",
+        "<b>Massive Size Reduction:</b> Excluded unneeded OpenCV binary dependencies and trimmed unnecessary models, cutting installer and executable size by over 130 MB.",
+        "<b>Direct Update Flow:</b> Clicking 'Update Available' now opens the update prompt and release notes directly, skipping intermediate dialogs.",
+        "<b>Batch Progress Logging:</b> Real-time progress sequence (e.g. 1/3: Processing <AC No>) now displays cleanly in Bill Scrapper and E-Bills Downloader logs.",
+        "<b>Automatic CAPTCHA Input:</b> Integrated automatic CAPTCHA recognition and input across portal bill scraping and downloader workflows.",
+        "<b>Chrome Session Stability:</b> Suppressed crash recovery and 'Restore pages' prompts when Chrome closes and restarts during batch runs.",
+        "<b>Modern PDF Engine:</b> Upgraded to modern PyMuPDF API across tools for clean, deprecation-free rendering and stamping.",
+        "<b>Thread Safety & Shutdown:</b> Resolved QThread background runner destruction on application exit for clean shutdowns.",
+    ],
     "2.8.113": [
         "<b>Ultra-Fast Launch Performance:</b> Switched to native onedir architecture and asynchronous licensing checks, reducing startup time from 20+ seconds down to 1–2 seconds.",
         "<b>Massive Size Reduction:</b> Excluded unneeded OpenCV binary dependencies and trimmed unnecessary models, cutting installer and executable size by over 130 MB.",

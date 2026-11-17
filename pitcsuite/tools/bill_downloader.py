@@ -25,8 +25,16 @@ def get_ocr():
     if _ocr_instance is None:
         try:
             import ddddocr
-            _ocr_instance = ddddocr.DdddOcr(show_ad=False)
+            try:
+                _ocr_instance = ddddocr.DdddOcr(show_ad=False)
+            except Exception:
+                # Fallback to beta model if common_old.onnx is missing or fails
+                _ocr_instance = ddddocr.DdddOcr(beta=True, show_ad=False)
         except Exception as exc:
+            try:
+                print(f"Warning: Failed to initialize ddddocr: {exc}")
+            except Exception:
+                pass
             _ocr_instance = False
     return _ocr_instance if _ocr_instance else None
 
@@ -387,7 +395,7 @@ class BillSoftPanel(QWidget):
             self._run_worker_impl(job)
         except Exception as e:
             import traceback as _tb, os as _os
-            with open(_os.path.join(_os.environ['USERPROFILE'], 'Desktop', 'bill_crash.txt'), 'w') as f: f.write(_tb.format_exc())
+            with open(_os.path.join(_os.environ['USERPROFILE'], 'Desktop', 'bill_crash.txt'), 'w', encoding='utf-8', errors='replace') as f: f.write(_tb.format_exc())
             self.signals.log.emit(f"CRASH: {e}"); self.signals.finished.emit()
 
     def _run_worker_impl(self, job):
@@ -403,7 +411,7 @@ class BillSoftPanel(QWidget):
             from pypdf import PdfReader, PdfWriter
         except Exception as e:
             import traceback as _tb, os as _os
-            with open(_os.path.join(_os.environ['USERPROFILE'], 'Desktop', 'bill_crash.txt'), 'w') as f: f.write(_tb.format_exc())
+            with open(_os.path.join(_os.environ['USERPROFILE'], 'Desktop', 'bill_crash.txt'), 'w', encoding='utf-8', errors='replace') as f: f.write(_tb.format_exc())
             self.signals.log.emit(f"ERROR: {e}"); self.signals.finished.emit(); return
 
         excel, out, url, headless, add_sr, separate = job

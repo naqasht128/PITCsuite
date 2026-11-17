@@ -655,7 +655,7 @@ class PITCWorker(QThread):
             self._run_impl_inner()
         except Exception as e:
             import traceback as _tb, os as _os
-            with open(_os.path.join(_os.environ['USERPROFILE'], 'Desktop', 'pitc_crash.txt'), 'w') as f: f.write(_tb.format_exc())
+            with open(_os.path.join(_os.environ['USERPROFILE'], 'Desktop', 'pitc_crash.txt'), 'w', encoding='utf-8', errors='replace') as f: f.write(_tb.format_exc())
             self.log.emit(f"CRASH: {e}")
 
     def _run_impl_inner(self):
@@ -690,7 +690,7 @@ class PITCWorker(QThread):
             import email.utils
         except Exception as e:
             import traceback as _tb, os as _os
-            with open(_os.path.join(_os.environ['USERPROFILE'], 'Desktop', 'pitc_crash.txt'), 'w') as f: f.write(_tb.format_exc())
+            with open(_os.path.join(_os.environ['USERPROFILE'], 'Desktop', 'pitc_crash.txt'), 'w', encoding='utf-8', errors='replace') as f: f.write(_tb.format_exc())
             self.log.emit(f"ERROR: Missing library — {e}")
             return
 

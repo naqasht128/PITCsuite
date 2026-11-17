@@ -795,9 +795,16 @@ class PITCBillScraper:
         if cls._ocr is None:
             try:
                 import ddddocr
-                cls._ocr = ddddocr.DdddOcr(show_ad=False)
+                try:
+                    cls._ocr = ddddocr.DdddOcr(show_ad=False)
+                except Exception:
+                    # Fallback to beta model if common_old.onnx is missing or fails
+                    cls._ocr = ddddocr.DdddOcr(beta=True, show_ad=False)
             except Exception as exc:
-                print(f"Warning: Failed to initialize ddddocr: {exc}")
+                try:
+                    print(f"Warning: Failed to initialize ddddocr: {exc}")
+                except Exception:
+                    pass
                 cls._ocr = False
         return cls._ocr if cls._ocr else None
 

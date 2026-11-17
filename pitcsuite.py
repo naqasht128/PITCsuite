@@ -9,6 +9,16 @@ os.environ.setdefault("PYMUPDF_SUGGEST_LAYOUT_ANALYZER", "0")
 sys.modules.setdefault("pymupdf.layout", None)
 warnings.filterwarnings("ignore", message=r".*The `fitz` API is deprecated.*")
 
+# Reconfigure stdout/stderr to utf-8 on Windows to prevent charmap encoding errors
+if sys.platform == "win32":
+    try:
+        if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # Lightweight cv2 stub to prevent ddddocr 1.6.1 from importing 118MB OpenCV
 import types
 sys.modules.setdefault("cv2", types.ModuleType("cv2"))
