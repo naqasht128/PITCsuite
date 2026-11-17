@@ -459,12 +459,14 @@ def kill_profile_chrome(profile_dir):
         "Where-Object { ($_.Name -like 'chrome*' -or $_.Name -like 'chromedriver*') -and $_.CommandLine }; "
         "foreach ($p in $procs) { Write-Output \"$($p.ProcessId)|$($p.CommandLine)\" }"
     )
+    no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if sys.platform == "win32" else 0
     try:
         res = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+            ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps_cmd],
             capture_output=True,
             text=True,
             timeout=8,
+            creationflags=no_window,
         )
         for line in res.stdout.splitlines():
             if "|" in line:
@@ -472,7 +474,12 @@ def kill_profile_chrome(profile_dir):
                 if norm_profile in cmdline.lower():
                     pid = pid_str.strip()
                     if pid.isdigit():
-                        subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True, timeout=5)
+                        subprocess.run(
+                            ["taskkill", "/F", "/PID", pid],
+                            capture_output=True,
+                            timeout=5,
+                            creationflags=no_window,
+                        )
     except Exception:
         pass
 
@@ -632,7 +639,13 @@ class PITCWorker(QThread):
             if hasattr(driver, "service") and driver.service and getattr(driver.service, "process", None):
                 pid = driver.service.process.pid
                 try:
-                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, timeout=5)
+                    no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if sys.platform == "win32" else 0
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/PID", str(pid)],
+                        capture_output=True,
+                        timeout=5,
+                        creationflags=no_window,
+                    )
                 except Exception:
                     pass
         except Exception:
