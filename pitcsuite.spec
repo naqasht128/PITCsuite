@@ -7,13 +7,13 @@ hidden_imports += collect_submodules('webdriver_manager')
 hidden_imports += collect_submodules('reportlab')
 hidden_imports += collect_submodules('ddddocr')
 
-# Bundle both common_old.onnx (default 13.6MB OCR model) and common.onnx (54MB beta model), plus charsets
+# Bundle only the lightweight 13MB default OCR model (common_old.onnx), omitting the 52MB beta model (common.onnx) and 19MB detection model (common_det.onnx)
 ddddocr_datas = []
 try:
     dd_spec = importlib.util.find_spec('ddddocr')
     if dd_spec and dd_spec.submodule_search_locations:
         dd_path = list(dd_spec.submodule_search_locations)[0]
-        for fname in ['common_old.onnx', 'common.onnx', 'charsets.py', 'logo.png']:
+        for fname in ['common_old.onnx', 'charsets.py', 'logo.png']:
             fpath = os.path.join(dd_path, fname)
             if os.path.exists(fpath):
                 ddddocr_datas.append((fpath, 'ddddocr'))
