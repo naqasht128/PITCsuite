@@ -63,11 +63,16 @@ jobs:
           name: PITCSuite-Windows-Setup
           path: dist/PITCSuite_Setup.exe
 
-      - name: Upload Standalone .exe Artifact
+      - name: Package Standalone Portable Zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/pitcsuite/* -DestinationPath dist/pitcsuite-portable.zip
+
+      - name: Upload Standalone Portable Zip Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PITCSuite-Standalone-exe
-          path: dist/pitcsuite.exe
+          name: PITCSuite-Portable-Zip
+          path: dist/pitcsuite-portable.zip
 
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
@@ -75,7 +80,7 @@ jobs:
         with:
           files: |
             dist/PITCSuite_Setup.exe
-            dist/pitcsuite.exe
+            dist/pitcsuite-portable.zip
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.tag_name }}
           body_path: RELEASE_NOTES.md
           generate_release_notes: false

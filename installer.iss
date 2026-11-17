@@ -40,9 +40,13 @@ VersionInfoCopyright=Copyright (C) 2026 {#AppPublisher}
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
+[InstallDelete]
+; Clean up previous monolithic onefile executable when upgrading from older versions
+Type: files; Name: "{app}\{#AppExeName}"
+
 [Files]
-; The main executable built by PyInstaller
-Source: "dist\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+; The modern onedir distribution built by PyInstaller
+Source: "dist\pitcsuite\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "pitcsuite\assets\pitcsuite_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

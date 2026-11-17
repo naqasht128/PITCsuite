@@ -812,6 +812,22 @@ def require_license() -> bool:
     if local_lic and local_lic.get("serial_key"):
         serial_key = local_lic["serial_key"]
 
+        # Fast local validation (<1ms) so the GUI launches instantly without network blocking
+        is_grace, _ = is_offline_grace_valid(local_lic)
+        if is_grace:
+            def _bg_verify_license():
+                try:
+                    bg_res = verify_license_remote(serial_key, primary_id, candidate_ids)
+                    if bg_res.get("valid"):
+                        local_lic.update(bg_res)
+                        local_lic["last_verified"] = datetime.now(timezone.utc).isoformat()
+                        local_lic["valid"] = True
+                        save_local_license(local_lic)
+                except Exception:
+                    pass
+            threading.Thread(target=_bg_verify_license, daemon=True).start()
+            return True
+
         # Perform remote check against Supabase via Vercel API
         res = verify_license_remote(serial_key, primary_id, candidate_ids)
 

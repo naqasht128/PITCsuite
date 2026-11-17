@@ -9,6 +9,10 @@ os.environ.setdefault("PYMUPDF_SUGGEST_LAYOUT_ANALYZER", "0")
 sys.modules.setdefault("pymupdf.layout", None)
 warnings.filterwarnings("ignore", message=r".*The `fitz` API is deprecated.*")
 
+# Lightweight cv2 stub to prevent ddddocr 1.6.1 from importing 118MB OpenCV
+import types
+sys.modules.setdefault("cv2", types.ModuleType("cv2"))
+
 if sys.stdout is None: sys.stdout = open(os.devnull, 'w')
 if sys.stderr is None: sys.stderr = open(os.devnull, 'w')
 
