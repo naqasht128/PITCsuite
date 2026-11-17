@@ -303,7 +303,7 @@ class BillScraperPanel(QWidget):
         self.progress_bar.setRange(0, max(total, 1)); self.progress_bar.setValue(done)
         display_status = "Fetched" if str(status).strip().lower() in ("ok", "done", "processed", "fetched") else "Bill Not Found"
         self.progress.setText(f"Fetched {done} of {total} | {account}: {display_status}")
-        self.log_box.append(f"{account}: {display_status}")
+        self.log_box.append(f"→ {display_status}")
 
     def _done(self, path, cancelled):
         self.start_btn.setEnabled(True); self.stop_btn.setEnabled(False)

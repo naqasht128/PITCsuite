@@ -499,13 +499,13 @@ class BillSoftPanel(QWidget):
             except Exception:
                 pass
 
-        for r in row_indices:
+        for idx, r in enumerate(row_indices, 1):
             if self.stop_flag:
                 sh.cell(r, status_col).value = "Stopped"; wb.save(excel); break
             while self.pause_flag: time.sleep(0.3)
             ac = sh.cell(r, ac_col).value; sr = sh.cell(r, sr_col).value
             if not ac or is_header_text(ac): continue
-            ac = str(ac).strip(); self.signals.log.emit(f"Processing AC: {ac}")
+            ac = str(ac).strip(); self.signals.log.emit(f"{idx}/{total}: Processing {ac}")
             status = None; bill_loaded = False
 
             for attempt in range(1, MAX_ATTEMPTS + 1):

@@ -1567,6 +1567,8 @@ class PITCBillScraper:
                     break
                 account = record.get("AC No.")
                 existing_status = record.get("status")
+                if log_callback and account:
+                    log_callback(f"{done}/{total}: Processing {account}")
                 try:
                     result = self.scrape_account(
                         account,
