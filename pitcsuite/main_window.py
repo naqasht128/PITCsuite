@@ -845,6 +845,9 @@ class MainWindow(QMainWindow):
         self._adapt_responsive_ui(self.width(), self.height())
 
     def _show_about_dialog(self):
+        if getattr(self, "_has_update", False):
+            self._on_update_clicked()
+            return
         dlg = AboutDialog(self)
         dlg.exec()
 
