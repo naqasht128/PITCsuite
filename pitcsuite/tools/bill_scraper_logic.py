@@ -397,6 +397,89 @@ BILL_HEADING_KEYWORDS = {
     "payment history", "billing payment history", "month", "bill",
 }
 
+HEADER_AC_KEYWORDS = {
+    "ac", "ac no", "ac number", "acnum", "ac_no", "ac-no", "ac#",
+    "account", "account no", "account number", "accountno", "account_no", "account-no", "account#",
+    "acc", "acc no", "acc number", "accno", "acc_no", "acc-no", "acc#",
+    "a/c", "a/c no", "a/c number", "a/c#",
+    "reference", "reference no", "reference number", "referenceno", "reference_no", "reference-no", "reference#",
+    "ref", "ref no", "ref number", "refno", "ref_no", "ref-no", "ref#",
+    "consumer", "consumer id", "consumer no", "consumer number", "consumerid", "consumerno", "consumer_id", "consumer_no", "consumer#",
+    "customer", "customer id", "customer no", "customer number", "customerid", "customerno", "customer_id", "customer_no", "customer#",
+    "cust id", "cust no", "cust_id", "cust_no",
+}
+
+HEADER_GENERAL_KEYWORDS = {
+    "sr", "sr no", "sr.", "sr. no", "sr. no.", "serial", "serial no", "serial number", "s.no", "s no", "s_no",
+    "bno", "batch", "batch no", "batch_no",
+    "sdiv", "sub division", "sub_division", "subdivision", "s_div",
+    "name", "consumer name", "name address", "name and address", "address",
+    "tariff", "tariff cat", "tariff category", "san load", "san_load", "san load kw",
+    "status", "remarks", "scrape_status", "scrape status",
+    "amount", "bill amount", "current bill", "total fpa", "total payment", "total units",
+    "payment", "payment date", "due date", "bill month", "month", "units",
+    "feeder", "transformer", "meter no", "meter type", "protected/non-protected",
+}
+
+HEADER_KEYWORDS = HEADER_AC_KEYWORDS | HEADER_GENERAL_KEYWORDS
+
+
+def is_ac_header(val):
+    if val is None:
+        return False
+    s = str(val).strip()
+    if not s:
+        return False
+    norm = re.sub(r"[^a-zA-Z0-9]+", " ", s).strip().lower()
+    compact = re.sub(r"[^a-zA-Z0-9]+", "", s).lower()
+    if "name" in norm:
+        return False
+    return norm in HEADER_AC_KEYWORDS or compact in {k.replace(" ", "") for k in HEADER_AC_KEYWORDS}
+
+
+def is_sr_header(val):
+    if val is None:
+        return False
+    s = str(val).strip()
+    if not s:
+        return False
+    norm = re.sub(r"[^a-zA-Z0-9]+", " ", s).strip().lower()
+    compact = re.sub(r"[^a-zA-Z0-9]+", "", s).lower()
+    return (
+        norm in {"sr", "sr no", "sr.", "sr. no", "sr. no.", "serial", "serial no", "s no", "sno"}
+        or compact in {"sr", "srno", "serial", "serialno", "sno"}
+    )
+
+
+def is_header_text(val):
+    if val is None:
+        return False
+    s = str(val).strip()
+    if not s:
+        return False
+
+    norm = re.sub(r"[^a-zA-Z0-9]+", " ", s).strip().lower()
+    compact = re.sub(r"[^a-zA-Z0-9]+", "", s).lower()
+
+    if norm in HEADER_KEYWORDS or compact in {k.replace(" ", "") for k in HEADER_KEYWORDS}:
+        return True
+
+    if is_ac_header(val) or is_sr_header(val):
+        return True
+
+    if norm in BILL_HEADING_KEYWORDS:
+        return True
+
+    digits = re.sub(r"\D", "", s)
+    if not digits:
+        # A cell with letters/text and no digits in an account/reference column is a header or title.
+        return True
+
+    if len(digits) < 7 and re.search(r"[a-zA-Z]", s):
+        return True
+
+    return False
+
 
 def canonical_label(value):
     label = re.sub(r"[^a-z0-9]+", " ", clean(value).lower()).strip()
@@ -1379,27 +1462,58 @@ class PITCBillScraper:
         workbook = load_spreadsheet(path)
         sheet = workbook.active
 
-        first = str(sheet.cell(1, 1).value or "").strip().lower().rstrip(".")
-        has_heading = first in {"ac", "ac no", "account", "account no"}
-        data_start_row = 2 if has_heading else 1
-
         old_max_col = sheet.max_column
         old_max_row = sheet.max_row
 
+        # Detect header row and identify column mappings
+        header_row = None
+        data_start_row = 1
+        ac_col = 1
         existing_col_names = {}
-        if has_heading:
+
+        # Look in the first 3 rows for the column header row (which contains an AC / Reference No header)
+        # or a title row followed by a header row
+        for r_check in range(1, min(old_max_row + 1, 4)):
+            r_vals = [sheet.cell(r_check, c).value for c in range(1, min(old_max_col + 1, 15))]
+            for col_idx, v in enumerate(r_vals, 1):
+                if is_ac_header(v):
+                    header_row = r_check
+                    data_start_row = r_check + 1
+                    ac_col = col_idx
+                    break
+            if header_row is not None:
+                break
+            if r_check < old_max_row:
+                next_row_vals = [sheet.cell(r_check + 1, c).value for c in range(1, min(old_max_col + 1, 15))]
+                if any(is_ac_header(nv) for nv in next_row_vals):
+                    continue
+            first_val = sheet.cell(r_check, 1).value
+            if is_header_text(first_val):
+                header_row = r_check
+                data_start_row = r_check + 1
+                break
+
+        if header_row is not None:
             for col in range(1, old_max_col + 1):
-                raw = sheet.cell(1, col).value
+                raw = sheet.cell(header_row, col).value
                 if raw:
-                    norm = "AC No." if col == 1 else normalized_key(raw)
-                    if norm.lower() in ("scrape_status", "scrape status"):
-                        norm = "Remarks"
+                    if col == ac_col or is_ac_header(raw):
+                        norm = "AC No."
+                    else:
+                        norm = normalized_key(raw)
+                        if norm.lower() in ("scrape_status", "scrape status"):
+                            norm = "Remarks"
                     existing_col_names[col] = norm
+
+        if ac_col not in existing_col_names:
+            existing_col_names[ac_col] = "AC No."
 
         row_records = []
         for r in range(data_start_row, old_max_row + 1):
-            raw_ac = sheet.cell(r, 1).value
+            raw_ac = sheet.cell(r, ac_col).value
             if raw_ac is None or not str(raw_ac).strip():
+                continue
+            if is_header_text(raw_ac):
                 continue
             record = {}
             for col in range(1, old_max_col + 1):
@@ -1409,7 +1523,7 @@ class PITCBillScraper:
                     if col_name == "status" and str(val).strip().upper() == "TARIFF CATEGORY":
                         val = ""
                     record[col_name] = val
-            record["AC No."] = raw_ac
+            record["AC No."] = str(raw_ac).strip()
             row_records.append(record)
 
         total = len(row_records)

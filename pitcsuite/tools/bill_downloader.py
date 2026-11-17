@@ -17,6 +17,7 @@ from PySide6.QtCore import Signal, QObject, QThread, QSettings
 from pitcsuite.ui_helpers import lbl, hline, START_BTN, STOP_BTN, notify, get_status_style
 from pitcsuite.templates import download_template
 from pitcsuite.config import config_path as _config_path
+from pitcsuite.tools.bill_scraper_logic import is_header_text, is_ac_header, is_sr_header
 
 _ocr_instance = None
 def get_ocr():
@@ -33,6 +34,56 @@ class BillWorkerSignals(QObject):
     log      = Signal(str)
     progress = Signal(int, int)
     finished = Signal()
+
+
+def detect_downloader_rows(sh):
+    """Detect header row, column indices (ac, sr, status), and valid data row indices."""
+    ac_col = 1
+    sr_col = 2
+    status_col = 3
+    header_row = None
+    start_row = 1
+
+    for r_check in range(1, min(sh.max_row + 1, 4)):
+        r_vals = [sh.cell(r_check, c).value for c in range(1, min(sh.max_column + 1, 15))]
+        for col_idx, v in enumerate(r_vals, 1):
+            if is_ac_header(v):
+                header_row = r_check
+                start_row = r_check + 1
+                ac_col = col_idx
+                break
+        if header_row is not None:
+            for col_idx, v in enumerate(r_vals, 1):
+                if is_sr_header(v):
+                    sr_col = col_idx
+                elif str(v or "").strip().lower() in ("status", "remarks", "remark", "result"):
+                    status_col = col_idx
+            break
+        if r_check < sh.max_row:
+            next_row_vals = [sh.cell(r_check + 1, c).value for c in range(1, min(sh.max_column + 1, 15))]
+            if any(is_ac_header(nv) for nv in next_row_vals):
+                continue
+        first_val = sh.cell(r_check, 1).value
+        if is_header_text(first_val):
+            header_row = r_check
+            start_row = r_check + 1
+            for col_idx, v in enumerate(r_vals, 1):
+                if is_sr_header(v):
+                    sr_col = col_idx
+                elif str(v or "").strip().lower() in ("status", "remarks", "remark", "result"):
+                    status_col = col_idx
+            break
+
+    row_indices = []
+    for r in range(start_row, sh.max_row + 1):
+        val = sh.cell(r, ac_col).value
+        if val is None or not str(val).strip():
+            continue
+        if is_header_text(val):
+            continue
+        row_indices.append(r)
+
+    return header_row, ac_col, sr_col, status_col, row_indices
 
 
 class BillSoftPanel(QWidget):
@@ -359,6 +410,25 @@ class BillSoftPanel(QWidget):
         os.makedirs(out, exist_ok=True)
         wb = load_workbook(excel); sh = wb.active
 
+        # Header and column detection
+        header_row, ac_col, sr_col, status_col, row_indices = detect_downloader_rows(sh)
+
+        if header_row is not None:
+            if not sh.cell(header_row, status_col).value:
+                sh.cell(header_row, status_col).value = "Status"
+                try:
+                    wb.save(excel)
+                except Exception:
+                    pass
+
+        total = len(row_indices); done = 0; collected = []
+
+        if not row_indices:
+            self.signals.log.emit("No valid account rows found to process.")
+            self.signals.progress.emit(0, 0)
+            self.signals.finished.emit()
+            return
+
         opts = webdriver.ChromeOptions()
         opts.add_argument("--window-size=1920,1080")
         opts.add_argument("--disable-gpu")
@@ -370,8 +440,6 @@ class BillSoftPanel(QWidget):
             driver.set_window_size(1920, 1080)
         except Exception:
             pass
-
-        total = sh.max_row - 1; done = 0; collected = []
         WAIT = 12; MAX_ATTEMPTS = 5; MIN_RENDER_WAIT = 5
 
         def visible_search_boxes():
@@ -431,12 +499,12 @@ class BillSoftPanel(QWidget):
             except Exception:
                 pass
 
-        for r in range(2, sh.max_row + 1):
+        for r in row_indices:
             if self.stop_flag:
-                sh.cell(r, 3).value = "Stopped"; wb.save(excel); break
+                sh.cell(r, status_col).value = "Stopped"; wb.save(excel); break
             while self.pause_flag: time.sleep(0.3)
-            ac = sh.cell(r, 1).value; sr = sh.cell(r, 2).value
-            if not ac: break
+            ac = sh.cell(r, ac_col).value; sr = sh.cell(r, sr_col).value
+            if not ac or is_header_text(ac): continue
             ac = str(ac).strip(); self.signals.log.emit(f"Processing AC: {ac}")
             status = None; bill_loaded = False
 
@@ -504,22 +572,22 @@ class BillSoftPanel(QWidget):
             if status is None: status = "Bill not loaded (timeout/site changed)"
 
             if not bill_loaded:
-                sh.cell(r, 3).value = status; wb.save(excel); done += 1
+                sh.cell(r, status_col).value = status; wb.save(excel); done += 1
                 self.signals.progress.emit(done, total); self.signals.log.emit(f"→ {status}"); continue
 
             pdf = driver.execute_cdp_cmd("Page.printToPDF", {
                 "printBackground": True, "paperWidth": 8.27, "paperHeight": 11.69,
                 "marginTop": 0, "marginBottom": 0, "marginLeft": 0, "marginRight": 0, "scale": self.PDF_SCALE_X
             })
-            pdf_name = str(sr).strip() if sr else ac
+            pdf_name = str(sr).strip() if (sr and not is_header_text(sr)) else ac
             p = self._unique_pdf(out, pdf_name)
             with open(p, "wb") as f: f.write(base64.b64decode(pdf["data"]))
             try:
-                self._fit_pdf_to_a4(p, sr if add_sr and sr else None)
+                self._fit_pdf_to_a4(p, sr if add_sr and sr and not is_header_text(sr) else None)
             except Exception as e:
                 self.signals.log.emit(f"⚠️ A4 format warning ({ac}): {e}")
             collected.append((int(sr) if sr and str(sr).isdigit() else 999999, p))
-            sh.cell(r, 3).value = "Saved"; self.signals.log.emit("→ PDF created"); wb.save(excel)
+            sh.cell(r, status_col).value = "Saved"; self.signals.log.emit("→ PDF created"); wb.save(excel)
             done += 1; self.signals.progress.emit(done, total)
 
         driver.quit()
